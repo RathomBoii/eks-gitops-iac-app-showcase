@@ -1,8 +1,6 @@
 # Dev environment overrides
 replicaCount: 2
-
 image:
   repository: "687069305167.dkr.ecr.ap-southeast-7.amazonaws.com/dev-helloworld"
-  tag: "v.1.0"
-
+  tag: "v.2.7"
 env: "dev"
