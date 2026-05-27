@@ -1,0 +1,26 @@
+version: 2
+
+updates:
+  # Enable version updates for npm
+  - package-ecosystem: "npm"
+    # Look for `package.json` and `lock` files in the `root` directory
+    directory: "/clean-architecture-app"
+    # Check the npm registry for updates every day (weekdays)
+    schedule:
+      interval: "daily"
+    target-branch: "main"
+
+  # Enable version updates for Docker
+  - package-ecosystem: "docker"
+    # Look for a `Dockerfile` in the `root` directory
+    directory: "/eks-private-cluster/app"
+    # Check for updates once a week
+    schedule:
+      interval: "daily"
+    target-branch: "main"
+
+  - package-ecosystem: "pip"
+    directory: "/eks-private-cluster/app"
+    schedule:
+      interval: "daily"
+    target-branch: "main"
