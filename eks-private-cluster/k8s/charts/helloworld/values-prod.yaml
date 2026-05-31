@@ -2,7 +2,7 @@
 replicaCount: 1
 image:
   repository: "687069305167.dkr.ecr.ap-southeast-7.amazonaws.com/prod-helloworld"
-  tag: "v.2.10"
+  tag: "v.2.11"
 env: "dev"
 
 secrets:
