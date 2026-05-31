@@ -16,8 +16,8 @@ domains:
 
 
 helloworld:
-  serviceName: helloworld-service 
-  namespace: helloworld
+  serviceName: helloworld-svc
+  namespace: prod-app
 
 argocd:
   serviceName: argocd-server   # default service name from ArgoCD install using official Helm chart
