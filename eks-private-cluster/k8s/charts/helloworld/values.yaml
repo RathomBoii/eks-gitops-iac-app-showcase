@@ -5,8 +5,8 @@ image:
   tag: "latest"
   pullPolicy: IfNotPresent
 
-env: "dev"
-namespace: "dev-app"
+env: "prod"
+namespace: "prod-app"
 
 serviceAccount:
   roleArn: "arn:aws:iam::687069305167:role/prod-helloworld"  # Set in values-dev/prod.yaml — IAM role ARN from terraform output
