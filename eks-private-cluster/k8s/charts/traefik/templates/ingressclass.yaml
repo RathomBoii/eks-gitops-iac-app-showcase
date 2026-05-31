@@ -1,0 +1,10 @@
+# Registers "traefik" as a valid IngressClass in the cluster.
+# Required so:
+#   1. cert-manager HTTP-01 solver can create temporary Ingress objects (validated by LBC webhook)
+#   2. Kubernetes knows which controller handles Ingress resources with ingressClassName: traefik
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: traefik
+spec:
+  controller: traefik.io/ingress-controller
