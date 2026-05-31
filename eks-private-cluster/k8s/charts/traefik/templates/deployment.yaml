@@ -24,7 +24,7 @@ spec:
             - --providers.kubernetescrd=true
             # Allow IngressRoute to reference services in other namespaces (e.g. argocd, monitoring)
             # Disabled by default in Traefik v3 as a security measure
-            - --providers.kubernetescrd.allowCrossNamespaceReferences=true
+            - --providers.kubernetescrd.allowCrossNamespace=true
             - --certificatesresolvers.letsencrypt.acme.email=you@example.com
             - --certificatesresolvers.letsencrypt.acme.storage=/data/acme.json
             - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
