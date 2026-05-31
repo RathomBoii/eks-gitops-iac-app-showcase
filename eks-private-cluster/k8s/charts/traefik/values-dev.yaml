@@ -6,6 +6,7 @@ serviceAccountName: traefik-service-account
 domains:
   helloworldApp: [domain-url]
   userApp: [domain-url]
+  prometheusApp: [domain-url]
   argocd: [domain-url]
   grafana: [domain-url]
 
@@ -24,4 +25,8 @@ userApp:
 
 grafana:
   serviceName: grafana-service
+  namespace: monitoring
+
+prometheus:
+  serviceName: prometheus-service
   namespace: monitoring
