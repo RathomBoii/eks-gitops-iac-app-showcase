@@ -11,16 +11,19 @@ spec:
       kind: Rule
       services:
         - name: {{ .Values.helloworld.serviceName }}
+          namespace: {{ .Values.helloworld.namespace }}
           port: 3000
     - match: "Host(`{{ .Values.domains.userApp }}`)"
       kind: Rule
       services:
         - name: {{ .Values.userApp.serviceName }}
+          namespace: {{ .Values.userApp.namespace }}
           port: 3000
     - match: "Host(`{{ .Values.domains.prometheusApp }}`)"
       kind: Rule
       services:
         - name: {{ .Values.prometheus.serviceName }}
+          namespace: {{ .Values.prometheus.namespace }}
           port: 3000
     # ArgoCD: must run with --insecure flag so it accepts plain HTTP from Traefik
     # [Client] ──HTTPS──▶ Traefik (terminates TLS) ──HTTP──▶ ArgoCD pod:8080
@@ -28,6 +31,7 @@ spec:
       kind: Rule
       services:
         - name: {{ .Values.argocd.serviceName }}
+          namespace: {{ .Values.argocd.namespace }}
           port: 8080  # ArgoCD HTTP port (not 443), requires --insecure on argocd-server
     # Grafana: must run with --insecure flag so it accepts plain HTTP from Traefik
     # [Client] ──HTTPS──▶ Traefik (terminates TLS) ──HTTP──▶ Grafana pod:3000
@@ -35,6 +39,7 @@ spec:
       kind: Rule
       services:
         - name: {{ .Values.grafana.serviceName }}
+          namespace: {{ .Values.grafana.namespace }}
           port: 3000  # Grafana HTTP port (not 443), requires --insecure on grafana-server
   # routes:
   # - match: Host(`example.com`) && PathPrefix(`/api`)
