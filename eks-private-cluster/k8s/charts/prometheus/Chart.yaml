@@ -1,5 +1,5 @@
 apiVersion: v2
-name: pometheus
+name: prometheus
 description: Prometheus wrapper chart — installs kube-prometheus-stack for cluster monitoring
 type: application
 version: 1.0.0
