@@ -27,3 +27,23 @@ output "public_subnet_ids" {
   description = "Public subnet IDs"
   value       = module.vpc.public_subnet_ids
 }
+
+output "helloworld_irsa_role_arn" {
+  description = "IAM role ARN for helloworld pod — use as serviceAccount.roleArn in values-dev/prod.yaml"
+  value       = module.iam.helloworld_role_arn
+}
+
+output "helloworld_api_key_secret_name" {
+  description = "Secrets Manager secret name for helloworld api-key — use as objectName in SecretProviderClass"
+  value       = module.secrets.helloworld_api_key_secret_name
+}
+
+output "lbc_role_arn" {
+  description = "IAM role ARN for AWS Load Balancer Controller — use in helm install"
+  value       = module.iam.lbc_role_arn
+}
+
+output "eso_role_arn" {
+  description = "IAM role ARN for External Secrets Operator — paste into secret-store values as serviceAccount.irsaRoleArn"
+  value       = module.iam.eso_role_arn
+}
