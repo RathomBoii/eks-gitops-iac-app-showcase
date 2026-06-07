@@ -41,4 +41,26 @@ variable "eso_service_account_name" {
   default     = "eks-secret-store-irsa"
 }
 
+variable "github_org" {
+  description = "GitHub organisation or user name that owns the repo (e.g. RathomBoii)"
+  type        = string
+}
+
+variable "github_repo" {
+  description = "GitHub repository name (e.g. technical-refresh)"
+  type        = string
+}
+
+variable "ecr_repo_name" {
+  description = "ECR repository base name — used to scope the push policy to <env>-<repo_name>"
+  type        = string
+  default     = "helloworld"
+}
+
+variable "create_github_oidc_provider" {
+  description = "Set true only on the first env (dev). The GitHub OIDC provider is account-scoped — creating it twice causes an error."
+  type        = bool
+  default     = false
+}
+
 

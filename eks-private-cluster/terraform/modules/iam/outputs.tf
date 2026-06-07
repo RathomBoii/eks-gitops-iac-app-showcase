@@ -16,3 +16,8 @@ output "eso_role_arn" {
   description = "IAM role ARN for External Secrets Operator — paste into secret-store values as serviceAccount.irsaRoleArn"
   value       = aws_iam_role.eso.arn
 }
+
+output "github_actions_role_arn" {
+  description = "IAM role ARN for GitHub Actions CI/CD — set as AWS_ROLE_TO_ASSUME in GitHub repository variables"
+  value       = aws_iam_role.github_actions.arn
+}

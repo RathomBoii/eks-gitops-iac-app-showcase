@@ -16,6 +16,8 @@ resource "aws_iam_role" "helloworld" {
       Condition = {
         StringEquals = {
           # Must match exactly: namespace and ServiceAccount name in the helm chart
+          # helloworld is a application's EKS namespace, revise it as your actual application namespace.
+          #* Pattern is: system:serviceaccount:<namespace>:<serviceaccount-name>
           "${var.oidc_provider}:sub" = "system:serviceaccount:${var.helloworld_namespace}:helloworld"
           "${var.oidc_provider}:aud" = "sts.amazonaws.com"
         }
@@ -186,3 +188,106 @@ resource "aws_iam_role_policy" "lbc_ec2" {
     ]
   })
 }
+
+# ── GitHub Actions OIDC provider ──────────────────────────────────────────────
+# AWS-account-level resource — only one should exist per account.
+# Set create_github_oidc_provider = true on the FIRST env you apply (e.g. dev),
+# and false for prod to avoid a "duplicate provider" error.
+resource "aws_iam_openid_connect_provider" "github_actions" {
+  count = var.create_github_oidc_provider ? 1 : 0
+
+  url = "https://token.actions.githubusercontent.com"
+
+  # sts.amazonaws.com is the audience GitHub Actions sends in its OIDC token
+  client_id_list = ["sts.amazonaws.com"]
+
+  # GitHub's OIDC thumbprint — AWS uses this to verify the token signature.
+  # Check current value at:
+  # https://docs.github.com/en/actions/security-for-github-actions/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
+  # openssl s_client \
+  # -servername token.actions.githubusercontent.com \
+  # -showcerts \
+  # -connect token.actions.githubusercontent.com:443 \
+  # </dev/null 2>/dev/null \
+  # | openssl x509 -fingerprint -sha1 -noout \
+  # | sed 's/sha1 Fingerprint=//I; s/://g' \
+  # | tr '[:upper:]' '[:lower:]'
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+
+  tags = {
+    Name      = "github-actions-oidc"
+    ManagedBy = "terraform"
+  }
+}
+
+# ── GitHub Actions IAM role (ECR push) ───────────────────────────────────────
+# Assumed by the CI/CD pipeline via OIDC — no static AWS credentials stored.
+# Trust is scoped to tag pushes from the specific GitHub repo only.
+resource "aws_iam_role" "github_actions" {
+  name = "${var.env}-github-actions-ecr-push"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Federated = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
+      }
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          # Audience must match client_id_list above
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+        }
+        StringLike = {
+          # Restrict to tag pushes from this specific repo only
+          # Covers v* tags and release/** tags — matches the CI pipeline triggers
+          "token.actions.githubusercontent.com:sub" = [
+            "repo:${var.github_org}/${var.github_repo}:ref:refs/tags/v*",
+            "repo:${var.github_org}/${var.github_repo}:ref:refs/tags/release/*"
+          ]
+        }
+      }
+    }]
+  })
+
+  tags = {
+    Name = "${var.env}-github-actions-ecr-push"
+    Env  = var.env
+  }
+}
+
+# ECR push permissions — scoped to the env-specific repository only
+resource "aws_iam_role_policy" "github_actions_ecr" {
+  name = "${var.env}-github-actions-ecr"
+  role = aws_iam_role.github_actions.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # GetAuthorizationToken is account-scoped — cannot be restricted to one repo
+        Effect   = "Allow"
+        Action   = ["ecr:GetAuthorizationToken"]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
+        ]
+        # Scoped to the env-specific ECR repo only (e.g. dev-helloworld)
+        Resource = "arn:aws:ecr:${var.region}:${data.aws_caller_identity.current.account_id}:repository/${var.env}-${var.ecr_repo_name}"
+      }
+    ]
+  })
+}
+
+# Resolves the current AWS account ID at plan time — used in trust policy ARN
+data "aws_caller_identity" "current" {}
