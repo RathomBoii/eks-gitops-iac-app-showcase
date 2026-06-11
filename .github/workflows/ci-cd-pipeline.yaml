@@ -30,6 +30,42 @@ jobs:
   #     - name: Run Semgrep
   #       run: semgrep --config=auto --severity=ERROR --error .
 
+  echo-message:
+    name: Echo Build Information
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print Environment Variables
+        run: |
+          echo "AWS_REGION: $AWS_REGION"
+          echo "IMAGE_TAG: $IMAGE_TAG"
+
+  human-approval:
+    name: Manual Approval
+    needs: echo-message
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Awaiting Manual Approval
+        run: echo "Waiting for manual approval to proceed with build and push to ECR..."
+      - name: Echo Approval Granted
+        if: ${{ github.event.workflow_run.conclusion == 'approved' }}
+        run: echo "Manual approval granted. Proceeding with build and push to ECR."
+      # - name: Create PR to k8s repo
+      #   uses: peter-evans/create-pull-request@v6
+      #   with:
+      #     token: ${{ secrets.K8S_REPO_TOKEN }}
+      #     commit-message: "chore: update image to ${{ env.IMAGE_TAG }}"
+      #     branch: "release/${{ env.IMAGE_TAG }}"
+      #     title: "🚀 Deploy ${{ env.IMAGE_TAG }} to production"
+      #     body: |
+      #       ## Deploy Summary
+      #       - Image: `${{ env.ECR_IMAGE }}`
+      #       - Trivy scan: ✅ Passed
+      #       - Triggered by: ${{ github.actor }}
+
+
+
+
   build-scan-push:
     name: Build → Scan → Push
     # needs: sast                  # Wait for SAST to pass
