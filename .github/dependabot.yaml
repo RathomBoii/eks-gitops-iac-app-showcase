@@ -24,3 +24,10 @@ updates:
     schedule:
       interval: "daily"
     target-branch: "main"
+
+# For a Python project using pip, in /eks-private-cluster/app
+  - package-ecosystem: "pip"
+    directory: "/local-dev/fastapi-simple-app"
+    schedule:
+      interval: "daily"
+    target-branch: "main"
