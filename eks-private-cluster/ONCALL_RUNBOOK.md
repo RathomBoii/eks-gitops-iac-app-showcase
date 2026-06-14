@@ -1,449 +1,666 @@
-# EKS On-Call Runbook and Ingress Decision Matrix
+# EKS On-Call Runbook
 
-This guide is written for the current architecture in this repository:
+Architecture this runbook covers:
 
-- Private EKS control plane
-- NLB fronting `ingress-nginx`
-- ArgoCD for GitOps
-- cert-manager for TLS
-- Prometheus and Grafana for cluster monitoring
-- Bastion host for `kubectl`, `helm`, and AWS CLI access
+- Private EKS cluster (private API endpoint — access via bastion only)
+- AWS NLB → Traefik → backend services (NLB created by AWS Load Balancer Controller)
+- cert-manager + Let's Encrypt (HTTP-01 via Traefik) for TLS
+- External Secrets Operator (ESO) syncing AWS Secrets Manager → k8s Secrets
+- ArgoCD GitOps (all workloads managed from `k8s/gitops/argocd/`)
+- Prometheus + Grafana for observability
+- RDS PostgreSQL in private subnets (accessible from EKS nodes only)
+- Bastion host (private subnet, EC2 Instance Connect Endpoint — no SSH key)
 
-Use this guide from the bastion host unless stated otherwise.
+All `kubectl` and `helm` commands must be run from the **bastion host** unless stated otherwise.
+
+---
 
 ## 1. On-Call Operating Model
 
 ### Severity levels
 
 | Severity | Meaning | Example | Update cadence |
-| --- | --- | --- | --- |
-| `SEV1` | Broad outage or critical security event | Public ingress down, all apps unavailable | Every 10-15 min |
-| `SEV2` | Major degradation with partial service available | High 5xx, TLS broken for one major domain | Every 30 min |
-| `SEV3` | Limited degradation with workaround | One app rollout failed, can rollback | Every 60 min |
-| `SEV4` | Internal issue with low user impact | Alert noise, one pod restarting without user impact | Best effort |
+|---|---|---|---|
+| `SEV1` | Broad outage or critical security event | All public traffic down, NLB unhealthy | Every 10–15 min |
+| `SEV2` | Major degradation, partial service available | TLS broken, one app down | Every 30 min |
+| `SEV3` | Limited degradation with workaround | One ArgoCD app degraded, rollback available | Every 60 min |
+| `SEV4` | Internal issue, low user impact | One pod restarting, no user impact | Best effort |
 
 ### Incident roles
 
 | Role | Responsibility |
-| --- | --- |
+|---|---|
 | `Incident Commander` | Own incident flow, assign tasks, approve mitigation |
 | `Operator` | Run commands, collect evidence, apply rollback or mitigation |
-| `Comms` | Update stakeholders with facts only |
-| `Scribe` | Keep timeline, commands used, and decision log |
-
-In a small team, one person may hold multiple roles, but always be explicit about who is deciding and who is executing.
+| `Communicator` | Update stakeholders with facts only |
+| `Scribe` | Keep record timeline, commands used, and decision log |
 
 ### SLO guardrails
 
-Use these as a starting point for platform operations.
+**SLI is the name of metric we used to measure our system performance whil SLO is the numerical value of SLI  and SLA which is the buffered SLO which we commit with customer**
 
 | SLO | Target |
-| --- | --- |
-| Ingress availability | `99.9%` monthly |
-| TLS success rate | `99.95%` monthly |
-| App HTTP success rate | `99.9%` monthly |
-| p95 latency | `< 300 ms` for the demo app |
-| Mean time to detect | `< 5 min` for SEV1/SEV2 |
-| Mean time to mitigate | `< 30 min` for SEV2 |
+|---|---|
+| Public ingress availability | 99.9% monthly |
+| TLS success rate | 99.95% monthly |
+| App HTTP success rate | 99.9% monthly |
+| p95 response latency | < 300 ms |
+| Mean time to detect (SEV1/2) | < 5 min |
+| Mean time to mitigate (SEV2) | < 30 min |
 
 ### First 5 minutes checklist
 
-1. Confirm severity and user impact.
-2. Freeze risky changes: pause manual deploys and avoid unrelated `helm upgrade` or `terraform apply`.
-3. Identify blast radius: one app, one namespace, one controller, or cluster-wide.
+1. Confirm severity and user impact scope.
+2. Freeze risky changes — pause manual deploys, do not run `terraform apply` or `helm upgrade` for unrelated changes.
+3. Identify blast radius: one app, one namespace, Traefik, ESO, or cluster-wide.
 4. Pick mitigation first, root cause second.
-5. Start a timeline.
+5. Start a timeline in the incident channel.
 
-### Core commands
+### Connect to bastion (prerequisite for all kubectl commands)
 
 ```bash
+# Get bastion instance ID
+INSTANCE_ID=$(aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=prod-bastion" "Name=instance-state-name,Values=running" \
+  --query "Reservations[0].Instances[0].InstanceId" \
+  --output text --region ap-southeast-7)
+
+# Connect via EC2 Instance Connect Endpoint (no SSH key required)
+aws ec2-instance-connect ssh \
+  --instance-id "${INSTANCE_ID}" \
+  --region ap-southeast-7
+
+# Or: AWS Console → EC2 → select prod-bastion → Connect → EC2 Instance Connect tab
+```
+
+### Core diagnostic commands
+
+```bash
+# Cluster-wide health
 kubectl get pods -A
-kubectl get ingress -A
-kubectl get svc -A
-kubectl get events -A --sort-by=.lastTimestamp
+kubectl get nodes -o wide
+kubectl get events -A --sort-by=.lastTimestamp | tail -50
 
-kubectl logs -n ingress-nginx deploy/ingress-nginx-controller --tail=200
-kubectl logs -n argocd deploy/argocd-server --tail=200
-kubectl logs -n cert-manager deploy/cert-manager --tail=200
+# Traefik
+kubectl get pods -n traefik
+kubectl get svc traefik -n traefik
+kubectl get ingressroute -A
 
+# ArgoCD
+kubectl get applications -n argocd
+
+# ESO
+kubectl get secretstore -A
+kubectl get externalsecret -A
+
+# cert-manager
+kubectl get certificate -A
+kubectl get challenge -A
+
+# Workloads
+kubectl get pods -n prod-app
 kubectl top pods -A
 kubectl top nodes
 ```
 
+---
+
 ## 2. Incident Runbooks
 
-### Incident 1: Public traffic fails or users see 5xx from ingress
+---
 
-### Symptoms
+### Incident 1 — Public traffic fails (5xx / timeout from NLB or Traefik)
 
-- `app.wolffialampang.com` or `argocd.wolffialampang.com` returns `502`, `503`, or `504`
-- NLB DNS resolves but requests fail or time out
-- Grafana or app health endpoints fail externally
+#### Symptoms
 
-### Likely causes
+- `helloworldapp.wolffialampang.com` or any subdomain returns `502`, `503`, `504`
+- NLB DNS resolves but requests fail
+- Grafana or `/health` endpoints unreachable externally
 
-- `ingress-nginx-controller` pods not ready
-- Bad ingress config or bad upstream service endpoints
-- NLB targets unhealthy
-- Backend pods ready state failing
+#### Architecture reminder
 
-### Triage
-
-```bash
-kubectl get pods -n ingress-nginx
-kubectl get svc -n ingress-nginx ingress-nginx-controller -o wide
-kubectl get ingress -A
-kubectl get endpoints -A
-kubectl describe ingress -A
-kubectl logs -n ingress-nginx deploy/ingress-nginx-controller --tail=300
+```
+Internet → Squarespace CNAME → NLB (AWS LBC) → Traefik pods (traefik ns) → backend Service → Pod
 ```
 
-### AWS checks
+#### Triage
 
 ```bash
-aws elbv2 describe-load-balancers --region ap-southeast-7
+# 1. Check Traefik pods
+kubectl get pods -n traefik
+kubectl describe pod -n traefik -l app=traefik
+kubectl logs -n traefik deploy/traefik --tail=300
+
+# 2. Check NLB and service
+kubectl get svc traefik -n traefik
+# EXTERNAL-IP should show the NLB DNS name
+
+# 3. Check IngressRoute rules
+kubectl get ingressroute -A
+kubectl describe ingressroute -A
+
+# 4. Check backend pods
+kubectl get pods -n prod-app
+kubectl get endpoints -n prod-app
+```
+
+#### AWS checks (from bastion)
+
+```bash
+# Find the NLB created by LBC
+aws elbv2 describe-load-balancers \
+  --region ap-southeast-7 \
+  --query "LoadBalancers[?contains(LoadBalancerName, 'traefik')]"
+
+# Check target group health
 aws elbv2 describe-target-groups --region ap-southeast-7
-aws elbv2 describe-target-health --target-group-arn <target-group-arn> --region ap-southeast-7
+aws elbv2 describe-target-health \
+  --target-group-arn <TARGET_GROUP_ARN> \
+  --region ap-southeast-7
 ```
 
-### Mitigation
-
-1. If ingress controller pods are unhealthy, restart only the controller deployment.
+#### Mitigation
 
 ```bash
-kubectl rollout restart deployment ingress-nginx-controller -n ingress-nginx
-kubectl rollout status deployment ingress-nginx-controller -n ingress-nginx
+# 1. Traefik pods unhealthy — restart the deployment
+kubectl rollout restart deployment/traefik -n traefik
+kubectl rollout status deployment/traefik -n traefik
+
+# 2. Backend pods crashing — rollback via ArgoCD
+kubectl rollout undo deployment/helloworld -n prod-app
+
+# 3. ArgoCD rollback to previous revision
+argocd app history helloworld
+argocd app rollback helloworld <REVISION>
 ```
 
-2. If the backend service has no endpoints, fix the app rollout or rollback ArgoCD revision.
+#### Escalate when
 
-```bash
-kubectl get pods -n dev-app
-kubectl rollout undo deployment/<deployment-name> -n dev-app
+- NLB target group stays unhealthy after Traefik recovery
+- Multiple IngressRoutes fail simultaneously
+- AWS LBC controller logs show NLB provisioning errors
+
+#### Post-incident
+
+- Add Traefik `PodDisruptionBudget` and verify `replicas: 2` in values
+- Tune Traefik readiness/liveness probe thresholds
+- Add NLB target health alert in Prometheus
+
+---
+
+### Incident 2 — TLS certificate pending, invalid, or expired
+
+#### Symptoms
+
+- Browser shows "Your connection is not private" or HTTP only
+- `kubectl get certificate -n traefik` shows `READY: False` or `Pending`
+- `traefik-tls` Secret missing or not type `kubernetes.io/tls`
+
+#### Architecture reminder
+
+```
+cert-manager ClusterIssuer → HTTP-01 challenge (Traefik handles /.well-known/acme-challenge/ on port 80)
+→ Let's Encrypt validates → cert stored as Secret "traefik-tls" in traefik namespace
+→ Traefik IngressRoute reads tls.secretName: traefik-tls
 ```
 
-3. If ingress rules are broken, rollback the `ingress-rules` chart to the previous release.
-
-```bash
-helm history ingress-rules -n ingress-nginx
-helm rollback ingress-rules <revision> -n ingress-nginx
-```
-
-### Escalate when
-
-- NLB targets stay unhealthy after controller recovery
-- Multiple namespaces fail at once
-- No safe rollback is available
-
-### Post-incident follow-up
-
-- Add or tune alerts for ingress 5xx and upstream latency
-- Add `PodDisruptionBudget` and HPA for ingress controller
-- Review ingress config blast radius
-
-### Incident 2: TLS certificate pending, invalid, or expired
-
-### Symptoms
-
-- Browser shows invalid cert or HTTP only
-- `kubectl get certificate -A` shows `False` or `Pending`
-- TLS secret is missing or not type `kubernetes.io/tls`
-
-### Likely causes
-
-- `cert-manager` pod unhealthy
-- `ClusterIssuer` misconfigured
-- HTTP-01 challenge path blocked by ingress
-- DNS record does not point to the current NLB
-
-### Triage
+#### Triage
 
 ```bash
 kubectl get pods -n cert-manager
 kubectl get clusterissuer
-kubectl describe clusterissuer letsencrypt-prod
-kubectl get certificate -A
-kubectl describe certificate -A
+kubectl describe clusterissuer letsencrypt-prod-traefik
+
+kubectl get certificate -n traefik
+kubectl describe certificate traefik-tls -n traefik
+
 kubectl get challenge -A
 kubectl describe challenge -A
-kubectl get secret -A | grep tls
+
+kubectl get secret traefik-tls -n traefik
 ```
 
-### Mitigation
-
-1. If `cert-manager` is unhealthy, restart the deployment.
+#### Mitigation
 
 ```bash
-kubectl rollout restart deployment cert-manager -n cert-manager
-kubectl rollout status deployment cert-manager -n cert-manager
+# 1. cert-manager pod unhealthy
+kubectl rollout restart deployment/cert-manager -n cert-manager
+
+# 2. Challenge failing — verify HTTP-01 solver can reach port 80
+# Traefik must be listening on port 80 and the CNAME in Squarespace must point to the NLB
+# Check IngressRoute for websecure redirect doesn't block /.well-known/acme-challenge/
+kubectl get ingressroute -n traefik -o yaml | grep -A5 "acme-challenge"
+
+# 3. Force certificate re-issue by deleting and letting cert-manager recreate
+kubectl delete certificate traefik-tls -n traefik
+# ArgoCD will re-create it on next sync
+
+# 4. Check DNS — Squarespace CNAME must point to the NLB hostname
+kubectl get svc traefik -n traefik -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
 ```
 
-2. If the challenge is blocked by ingress, verify `ingressClassName: nginx` in [eks-private-cluster/k8s/manifests/cluster-issuer.yaml](eks-private-cluster/k8s/manifests/cluster-issuer.yaml).
-
-3. If DNS is wrong, update the CNAME or alias to the active NLB hostname.
-
-4. If ingress redirects break HTTP-01 challenge unexpectedly, inspect challenge solver ingress before changing redirect behavior.
-
-### Validation
+#### Validate after fix
 
 ```bash
+curl -vk https://helloworldapp.wolffialampang.com/health
 curl -vk https://argocd.wolffialampang.com/
-curl -vk https://grafana.wolffialampang.com/
+openssl s_client -connect helloworldapp.wolffialampang.com:443 -servername helloworldapp.wolffialampang.com < /dev/null | grep "expire date"
 ```
 
-### Escalate when
+#### Escalate when
 
-- LetsEncrypt rate limit is hit
-- DNS is controlled by another team and blocks recovery
-- All domains fail at once
+- Let's Encrypt rate limit hit (5 failures/hour, 50/week per domain)
+- Squarespace DNS propagation is blocking challenge validation
+- All domains fail simultaneously
 
-### Post-incident follow-up
+#### Post-incident
 
-- Add cert expiry alerts at 14d, 7d, and 3d
-- Document domain ownership and DNS change path
-- Add a runbook for HTTP-01 solver diagnostics
+- Add cert expiry Prometheus alert at 14d, 7d, 3d before expiry
+- Document Squarespace DNS change SLA
 
-### Incident 3: ArgoCD sync succeeds or runs, but app does not become healthy
+---
 
-### Symptoms
+### Incident 3 — Secret not injected / app reads empty or missing env var
 
-- ArgoCD app shows `OutOfSync`, `Progressing`, or `Degraded`
-- `dev-app` namespace exists but pods are missing or crash looping
-- New image tag was pushed but deployment is not serving traffic
+#### Symptoms
 
-### Likely causes
+- `helloworld /secret-check` returns `{"api_key_loaded": false}`
+- Pod env var `API_KEY` is empty or missing
+- `kubectl get externalsecret -A` shows `SecretSyncError` or stale status
 
-- Wrong image tag in `values-dev.yaml`
-- ECR pull failure or repo permission issue
-- App manifest renders incorrectly
-- ArgoCD repo credentials or repo access failed
+#### Architecture reminder
 
-### Triage
+```
+AWS Secrets Manager "prod/helloworld" (JSON: {"API_KEY": "..."})
+→ ExternalSecret (ESO) fetches every 1h
+→ k8s Secret "helloworld-secrets" in prod-app namespace
+→ Deployment secretKeyRef → pod env var API_KEY
+→ main.py os.environ.get("API_KEY")
+```
+
+#### Triage
 
 ```bash
-kubectl get application -n argocd
+# 1. ESO operator health
+kubectl get pods -n external-secrets
+
+# 2. SecretStore connection to AWS
+kubectl get secretstore -n external-secrets
+kubectl describe secretstore secret-store -n external-secrets
+# Look for: "Valid" status and no auth errors
+
+# 3. ExternalSecret sync status
+kubectl get externalsecret -n external-secrets
+kubectl describe externalsecret helloworld-secrets -n external-secrets
+# Look for: "SecretSynced" condition = True
+
+# 4. Check the k8s Secret was created
+kubectl get secret helloworld-secrets -n prod-app
+kubectl get secret helloworld-secrets -n prod-app -o jsonpath='{.data}' | base64 -d
+
+# 5. Check the pod is using the correct secretKeyRef
+kubectl describe pod -n prod-app -l app=helloworld | grep -A5 "secretKeyRef"
+```
+
+#### AWS checks
+
+```bash
+# Verify the secret exists in Secrets Manager
+aws secretsmanager get-secret-value \
+  --secret-id prod/helloworld \
+  --region ap-southeast-7 \
+  --query SecretString \
+  --output text
+
+# Verify ESO IRSA role has access
+aws sts get-caller-identity --region ap-southeast-7
+```
+
+#### Mitigation
+
+```bash
+# 1. Force ESO to re-sync immediately (delete and ArgoCD recreates)
+kubectl annotate externalsecret helloworld-secrets \
+  force-sync=$(date +%s) \
+  -n external-secrets
+
+# 2. If SecretStore auth is broken (IRSA role issue), check the ServiceAccount annotation
+kubectl get sa eks-secret-store-irsa -n external-secrets -o yaml | grep role-arn
+# Must match terraform output eso_role_arn
+
+# 3. If the k8s Secret exists but pod doesn't pick it up, restart the pod
+kubectl rollout restart deployment/helloworld -n prod-app
+
+# 4. If Secrets Manager secret value is wrong, update it
+aws secretsmanager put-secret-value \
+  --secret-id prod/helloworld \
+  --secret-string '{"API_KEY":"new-value"}' \
+  --region ap-southeast-7
+# ESO will sync on next refresh interval (up to 1h) or force sync above
+```
+
+#### Escalate when
+
+- IRSA role trust policy mismatch (requires Terraform change)
+- Secrets Manager VPC endpoint unreachable
+- ESO operator CrashLooping
+
+#### Post-incident
+
+- Reduce `refreshInterval` from `1h` to `15m` for faster secret rotation
+- Add Prometheus alert on `externalsecret_sync_calls_error` metric
+- Add `/secret-check` endpoint to synthetic monitoring
+
+---
+
+### Incident 4 — ArgoCD app degraded or sync failing
+
+#### Symptoms
+
+- ArgoCD UI shows `Degraded`, `OutOfSync`, or `Unknown`
+- New commit to `main` not reflected on cluster after several minutes
+- `kubectl get applications -n argocd` shows error
+
+#### Triage
+
+```bash
+kubectl get applications -n argocd
 kubectl describe application helloworld -n argocd
-kubectl get pods -n dev-app
-kubectl describe pods -n dev-app
-kubectl get events -n dev-app --sort-by=.lastTimestamp
-kubectl get deploy,rs,svc -n dev-app
+kubectl describe application traefik -n argocd
+
+# ArgoCD server and repo-server logs
+kubectl logs -n argocd deploy/argocd-server --tail=200
+kubectl logs -n argocd deploy/argocd-repo-server --tail=200
+
+# Check repo connection (public repo — no credentials needed)
+argocd repo list
 ```
 
-### Image and rollout checks
+#### Mitigation
 
 ```bash
-kubectl describe deployment -n dev-app
-kubectl get pod -n dev-app -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[*].state.waiting.reason}{"\n"}{end}'
+# 1. Force manual sync
+argocd app sync helloworld
+argocd app sync traefik
+
+# 2. If app is in a failed state, hard refresh
+argocd app get helloworld --hard-refresh
+
+# 3. Rollback to previous revision
+argocd app history helloworld
+argocd app rollback helloworld <REVISION>
+
+# 4. ArgoCD server unhealthy
+kubectl rollout restart deployment/argocd-server -n argocd
+kubectl rollout restart deployment/argocd-repo-server -n argocd
 ```
 
-### Mitigation
+#### Escalate when
 
-1. If the image tag is wrong, update the Helm values and resync ArgoCD.
-2. If the rollout is bad, sync to the previous Git revision or rollback the deployment.
+- All applications show `Unknown` (ArgoCD itself is down)
+- Repo server cannot clone the Git repo
 
-```bash
-kubectl rollout undo deployment/<deployment-name> -n dev-app
-```
+#### Post-incident
 
-3. If ECR auth or permissions are broken, validate node role or workload identity permissions and test image pull manually from a debug pod.
+- Add ArgoCD app health alert in Prometheus
+- Verify `automated.selfHeal: true` is set in all Application CRs
 
-### Escalate when
+---
 
-- ArgoCD cannot fetch the repo
-- Image exists in ECR but nodes still cannot pull
-- The deployment is healthy internally but ingress still fails
+### Incident 5 — Node NotReady or pods Pending
 
-### Post-incident follow-up
-
-- Add admission checks to block nonexistent image tags
-- Add app-level readiness and startup probes
-- Add deployment failure alerts from ArgoCD or Prometheus
-
-### Incident 4: Nodes become `NotReady`, pods stay `Pending`, or capacity runs out
-
-### Symptoms
+#### Symptoms
 
 - `kubectl get nodes` shows `NotReady`
-- Pods remain `Pending`
-- `kubectl describe pod` shows scheduling failures
-- Multiple workloads restart during node drain or maintenance
+- Pods stuck in `Pending` state
+- Workloads unschedulable
 
-### Likely causes
-
-- Node group capacity too small
-- AZ or subnet IP exhaustion
-- DaemonSet pressure or resource requests too high
-- Cluster autoscaling not present for workload spikes
-
-### Triage
+#### Triage
 
 ```bash
 kubectl get nodes -o wide
 kubectl describe nodes
 kubectl top nodes
 kubectl get pods -A --field-selector=status.phase=Pending
-kubectl describe pod <pod-name> -n <namespace>
-kubectl get events -A --sort-by=.lastTimestamp | tail -n 50
+kubectl describe pod <PENDING_POD> -n <NAMESPACE>
+kubectl get events -A --sort-by=.lastTimestamp | tail -50
 ```
 
-### AWS checks
+#### AWS checks
 
 ```bash
-aws eks describe-nodegroup --cluster-name <cluster-name> --nodegroup-name <nodegroup-name> --region ap-southeast-7
-aws ec2 describe-subnets --subnet-ids <subnet-id-1> <subnet-id-2> --region ap-southeast-7
-```
+# Check node group health
+aws eks describe-nodegroup \
+  --cluster-name prod-eks \
+  --nodegroup-name <NODEGROUP_NAME> \
+  --region ap-southeast-7
 
-### Mitigation
-
-1. If a node is unhealthy, cordon and drain it only if enough spare capacity exists.
-
-```bash
-kubectl cordon <node-name>
-kubectl drain <node-name> --ignore-daemonsets --delete-emptydir-data
-```
-
-2. If capacity is too low, temporarily scale the managed node group.
-3. If pods are `Pending` due to requests, reduce over-provisioned requests or temporarily scale critical workloads only.
-
-### Escalate when
-
-- Both AZs are impacted
-- Subnet IPs are exhausted
-- Critical namespaces cannot schedule core controllers
-
-### Post-incident follow-up
-
-- Introduce Karpenter or Cluster Autoscaler
-- Add `PodDisruptionBudget` and topology spread constraints
-- Review subnet sizing and VPC CNI IP planning
-
-### Incident 5: ECR image pull fails or pods enter `ImagePullBackOff` / `CrashLoopBackOff`
-
-### Symptoms
-
-- Pods fail with `ErrImagePull`, `ImagePullBackOff`, or repeated restarts
-- New deployment reaches cluster but never becomes ready
-
-### Likely causes
-
-- Wrong image tag or repository URI
-- ECR permissions missing on node role or workload identity
-- App starts but fails health checks
-- New image is bad and needs rollback
-
-### Triage
-
-```bash
-kubectl get pods -n dev-app
-kubectl describe pod <pod-name> -n dev-app
-kubectl logs <pod-name> -n dev-app --previous
-kubectl get deployment -n dev-app -o yaml | grep image:
-```
-
-### AWS checks
-
-```bash
-aws ecr describe-images \
-  --repository-name helloworld \
+# Check subnet available IPs (VPC CNI exhaustion)
+aws ec2 describe-subnets \
+  --subnet-ids <PRIVATE_SUBNET_ID_1> <PRIVATE_SUBNET_ID_2> <PRIVATE_SUBNET_ID_3> \
   --region ap-southeast-7 \
-  --query 'imageDetails[].imageTags' \
-  --output table
+  --query "Subnets[].{ID:SubnetId,AvailableIPs:AvailableIpAddressCount}"
 ```
 
-### Mitigation
-
-1. Roll back to the last known good image tag.
-2. If image tag exists but pull fails, verify IAM permissions and VPC endpoint reachability.
-3. If the container starts but crashes, inspect app logs and health probe configuration.
+#### Mitigation
 
 ```bash
-kubectl rollout undo deployment/<deployment-name> -n dev-app
+# 1. Cordon and drain an unhealthy node
+kubectl cordon <NODE_NAME>
+kubectl drain <NODE_NAME> --ignore-daemonsets --delete-emptydir-data
+
+# 2. Temporarily scale node group if capacity is too low
+aws eks update-nodegroup-config \
+  --cluster-name prod-eks \
+  --nodegroup-name <NODEGROUP_NAME> \
+  --scaling-config minSize=2,maxSize=6,desiredSize=4 \
+  --region ap-southeast-7
 ```
 
-### Escalate when
+#### Escalate when
 
-- The last known good image also fails
-- Pull failures affect multiple namespaces or controllers
-- VPC endpoints or ECR service health are suspect
+- All AZs impacted simultaneously
+- Subnet IP exhaustion (AvailableIpAddressCount = 0)
+- Control plane API unreachable (cannot kubectl from bastion)
 
-### Post-incident follow-up
+#### Post-incident
 
-- Enforce image existence checks in CI
-- Add startup probes and better crash diagnostics
-- Add deployment policy to block mutable or unverified tags
+- Add Karpenter or Cluster Autoscaler
+- Add node memory/CPU pressure alerts
+- Review subnet CIDR sizing for VPC CNI
+
+---
+
+### Incident 6 — ECR image pull fails (ImagePullBackOff)
+
+#### Symptoms
+
+- Pods stuck in `ImagePullBackOff` or `ErrImagePull`
+- New deployment never becomes ready after CI pipeline ran
+
+#### Triage
+
+```bash
+kubectl describe pod <POD_NAME> -n prod-app | grep -A10 "Events:"
+kubectl get deployment helloworld -n prod-app -o yaml | grep "image:"
+
+# Verify the image tag exists in ECR
+aws ecr describe-images \
+  --repository-name prod-helloworld \
+  --region ap-southeast-7 \
+  --query "sort_by(imageDetails, &imagePushedAt)[-5:].imageTags"
+```
+
+#### Mitigation
+
+```bash
+# 1. Roll back to last known good tag
+# Edit values-prod.yaml image.tag and push to trigger ArgoCD sync
+# Or rollback directly:
+kubectl rollout undo deployment/helloworld -n prod-app
+
+# 2. If pull auth fails — check helloworld IRSA ServiceAccount annotation
+kubectl get sa helloworld -n prod-app -o yaml | grep role-arn
+# Must match terraform output helloworld_irsa_role_arn
+
+# 3. Test ECR pull auth from a debug pod
+kubectl run ecr-test --rm -it \
+  --image=amazonlinux:2 \
+  --serviceaccount=helloworld \
+  -n prod-app \
+  -- aws ecr get-login-password --region ap-southeast-7
+```
+
+#### Escalate when
+
+- Last known good image also fails to pull
+- VPC endpoint for ECR is unreachable (`ecr.api` or `ecr.dkr`)
+
+#### Post-incident
+
+- Add image existence check to CI pipeline before tagging
+- Enable ECR image scanning and block push on CRITICAL CVEs (uncomment Trivy step in pipeline)
+
+---
+
+### Incident 7 — RDS PostgreSQL unreachable
+
+#### Symptoms
+
+- pgAdmin pod cannot connect to database
+- App logs show connection timeout to RDS endpoint
+- `psql` from bastion fails
+
+#### Triage
+
+```bash
+# Get RDS endpoint
+aws rds describe-db-instances \
+  --db-instance-identifier postgres-prod \
+  --region ap-southeast-7 \
+  --query "DBInstances[0].Endpoint.Address" \
+  --output text
+
+# Check RDS instance status
+aws rds describe-db-instances \
+  --db-instance-identifier postgres-prod \
+  --region ap-southeast-7 \
+  --query "DBInstances[0].{Status:DBInstanceStatus,AZ:AvailabilityZone,MultiAZ:MultiAZ}"
+
+# Test connectivity from bastion (RDS is in private subnet, bastion is in same VPC)
+psql -h <RDS_ENDPOINT> -U pgadmin -d appdb -c "SELECT 1;"
+# Password is in Secrets Manager: /<env>/rds/postgres-prod/password
+
+# Retrieve password
+aws secretsmanager get-secret-value \
+  --secret-id /prod/rds/postgres-prod/password \
+  --region ap-southeast-7 \
+  --query SecretString --output text
+```
+
+#### AWS checks
+
+```bash
+# Check RDS security group allows EKS node SG on port 5432
+aws ec2 describe-security-groups \
+  --filters "Name=tag:Name,Values=prod-rds-sg" \
+  --region ap-southeast-7 \
+  --query "SecurityGroups[0].IpPermissions"
+```
+
+#### Mitigation
+
+```bash
+# 1. If RDS is in a failed state, attempt reboot
+aws rds reboot-db-instance \
+  --db-instance-identifier postgres-prod \
+  --region ap-southeast-7
+
+# 2. If security group rule is missing, re-apply Terraform
+terraform apply -var-file="envs/prod.tfvars" -target=module.rds
+```
+
+#### Escalate when
+
+- RDS shows `failed` status (requires AWS Support)
+- Data loss suspected
+
+#### Post-incident
+
+- Enable Multi-AZ in `prod.tfvars`: `rds_multi_az = true`
+- Add RDS CPU, connection count, and freeable memory alerts
+
+---
 
 ## 3. Recommended Alert Pack
 
-Start with these alerts to protect the platform SLOs.
-
 | Area | Alert |
-| --- | --- |
-| Ingress | 5xx rate high, target unhealthy, ingress controller pod not ready |
-| TLS | certificate expiry, challenge failure |
-| App | HTTP success rate low, p95 latency high, restart spike |
-| ArgoCD | app degraded, sync failed, repo fetch failed |
-| Nodes | node not ready, disk pressure, memory pressure, pending pods |
-| ECR / deploy | image pull failures, rollout stuck |
+|---|---|
+| Traefik | Pod not ready, 5xx rate > 1%, p99 latency spike |
+| NLB | Target group unhealthy targets > 0 |
+| TLS | Certificate expiry < 14d, challenge failure |
+| ESO | `externalsecret_sync_calls_error` > 0 |
+| ArgoCD | Application degraded, sync failed |
+| Nodes | NotReady, CPU > 85%, memory > 85%, pending pods |
+| ECR | ImagePullBackOff events |
+| RDS | CPU > 80%, connections > 80% of max, freeable memory < 100MB |
+| App | HTTP 5xx rate, p95 latency, restart spike |
 
-## 4. Decision Matrix: NLB + NGINX Ingress vs AWS Load Balancer Controller
+---
 
-This section is designed so you can also use it as an interview answer.
+## 4. Ingress Decision Matrix — Traefik vs AWS LBC (ALB)
+
+This section can also serve as an interview answer on ingress architecture trade-offs.
 
 ### Quick summary
 
-- `NLB + NGINX` is better when you want one shared ingress layer with rich L7 routing behavior and you can absorb more platform operations.
-- `AWS Load Balancer Controller` is better when you want stronger AWS-native integration, clearer per-app isolation, and lower reverse-proxy operations burden.
+- **Traefik** (current) — rich L7 proxy, central routing, Kubernetes-native config via CRDs, best for shared ingress across many services.
+- **AWS LBC with ALB** — AWS-native, per-app isolation, WAF/ACM/Cognito integration, lower proxy ops, best for teams wanting AWS-managed edge.
 
 ### Decision matrix
 
-| Dimension | NLB + NGINX Ingress | AWS Load Balancer Controller |
-| --- | --- | --- |
-| Data path | `NLB -> ingress-nginx -> Service -> Pod` | `ALB/NLB -> Service/Pod target group` depending on pattern |
-| L7 flexibility | Strongest: rewrite, custom headers, advanced routing, mature NGINX config | Good, but more limited for complex proxy behavior |
-| AWS native integration | Moderate | Strong: WAF, ACM, Shield, Cognito/OIDC, target group features |
-| Shared ingress model | Very good for many apps behind one ingress tier | Less efficient if each app gets its own ALB |
-| Blast radius | Higher, because one ingress controller can affect many apps | Lower per app/team if ALBs are isolated |
-| Ops burden | Higher: controller tuning, upgrades, config safety | Lower on proxy layer, but still need controller ops |
-| Cost profile | Often cheaper when many apps share one NLB | Can become expensive with many ALBs |
-| Security model | Needs extra work for WAF or auth at edge | Strong AWS-native edge security integrations |
-| Debugging | Must inspect NGINX config, controller logs, upstreams, and LB | Easier for AWS-side LB health, but AWS annotations can get complex |
-| Team fit | Better for platform teams that want central ingress control | Better for AWS-centric teams and app-level ownership |
+| Dimension | Traefik + NLB (current) | AWS LBC + ALB |
+|---|---|---|
+| Data path | NLB → Traefik pods → Service → Pod | ALB → Target Group → Pod (ip mode) |
+| L7 routing | Rich: middleware, rewrite, path strip, auth, rate limit | Good via annotations, less flexible |
+| TLS management | cert-manager + Let's Encrypt | ACM (auto-renews, no cert-manager needed) |
+| AWS native integration | Moderate | Strong: WAF, Shield, Cognito, ACM |
+| Shared ingress model | Excellent — one Traefik for all apps | Less efficient — one ALB per Ingress by default |
+| Blast radius | Higher — Traefik outage affects all apps | Lower — one app's ALB fails independently |
+| Cost | Lower — one NLB shared across all apps | Higher if many apps each get an ALB |
+| Observability | Traefik dashboard + Prometheus metrics | AWS CloudWatch + Access Logs |
+| Config complexity | CRD-based (IngressRoute, Middleware) | Annotation-based on Ingress objects |
+| On-call burden | Higher: proxy tuning, cert-manager ops | Lower on proxy layer, higher on AWS annotation complexity |
 
-### Trade-off narrative for interviews
+### When to switch to ALB
 
-Use this answer structure:
+Revisit AWS LBC + ALB when:
 
-1. Start from the operating model.
-2. State the blast radius and on-call implications.
-3. State the AWS integration and cost trade-offs.
-4. End with the decision for the current platform.
+- You need WAF or AWS Shield at the edge
+- Teams want per-app ingress ownership and blast radius isolation
+- You want ACM instead of cert-manager (removes Let's Encrypt rate limit risk)
+- You integrate Cognito or AWS-native OIDC at the edge
 
-Example answer:
+### Current recommendation
 
-> I would choose based on operating model rather than saying one is always better. If the team wants a shared ingress layer with strong L7 routing, consistent policy, and lower cost across many services, I would use NLB plus ingress-nginx. The trade-off is higher platform operations burden and larger blast radius because the ingress controller becomes a shared dependency. If the team wants stronger AWS-native integrations like WAF, ACM, and Cognito, plus clearer per-application isolation, I would lean toward AWS Load Balancer Controller with ALB. The trade-off is higher cost and tighter AWS coupling. For this repository's current shared-ingress design, NLB plus ingress-nginx is a reasonable choice, but it needs stronger runbooks, alerting, scaling, and rollback discipline to support SLOs.
+Stay with **Traefik + NLB** because:
+- Single ingress layer is simpler to reason about for this project
+- cert-manager + Let's Encrypt avoids ACM cost and IAM complexity
+- Middleware chain (auth, rate limit, headers) is more expressive than ALB annotations
+- All current subdomains share one NLB — cost-efficient
 
-### Recommended choice for this repository today
-
-Stay with `NLB + ingress-nginx` for now because the repository is built around:
-
-- Shared ingress rules in one chart
-- Shared TLS management through cert-manager
-- Multiple public domains routed through one ingress tier
-- A learning platform where central routing is easier to reason about
-
-Revisit ALB Controller when one or more of these becomes true:
-
-- You need WAF or AWS-native auth at the edge
-- Teams want per-app ingress ownership
-- You want tighter integration with AWS networking and security controls
-- The blast radius of the shared NGINX ingress becomes unacceptable
+---
 
 ## 5. Improvement Backlog
 
-To make this platform production-grade, prioritize these next:
-
-1. Enable Alertmanager and route alerts to Slack or PagerDuty.
-2. Add `PodDisruptionBudget`, HPA, and topology spread for critical workloads.
-3. Add runbooks for subnet IP exhaustion and EKS access plane issues.
-4. Add Karpenter or cluster autoscaling for workload spikes.
-5. Add policy enforcement and secrets management.
+| Priority | Item |
+|---|---|
+| High | Add Alertmanager with Slack/PagerDuty routing |
+| High | Add `PodDisruptionBudget` for Traefik and helloworld |
+| High | Enable RDS Multi-AZ (`rds_multi_az = true` in prod.tfvars) |
+| Medium | Add Karpenter or Cluster Autoscaler for workload spikes |
+| Medium | Reduce ESO `refreshInterval` to 15m for faster secret rotation |
+| Medium | Enable Trivy and Semgrep steps in CI pipeline |
+| Medium | Add synthetic monitoring on `/health` and `/secret-check` |
+| Low | Add subnet CIDR alerts for VPC CNI IP exhaustion |
+| Low | Add topology spread constraints for Traefik replicas |
