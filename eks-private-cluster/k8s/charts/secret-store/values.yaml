@@ -10,5 +10,5 @@ serviceAccount:
   irsaRoleArn: ""              # IAM role ARN for IRSA — must be set per environment
 
 externalSecret:
-  name: helloworld-secrets      # Name of the k8s Secret to create — must match secretName in helloworld deployment values
-  key: ""                       # AWS Secrets Manager secret name to fetch — must be set per environment (e.g. prod/helloworld)
+  name: app-secrets      # Name of the k8s Secret to create — must match secretName in app deployment values
+  key: ""                       # AWS Secrets Manager secret name to fetch — must be set per environment (e.g. prod/app)

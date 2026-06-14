@@ -7,7 +7,7 @@ image:
 
 
 serviceAccount:
-  roleArn: "arn:aws:iam::687069305167:role/prod-helloworld"  # Set in values-dev/prod.yaml — IAM role ARN from terraform output
+  roleArn: "arn:aws:iam::687069305167:role/prod-app"  # Set in values-dev/prod.yaml — IAM role ARN from terraform output
 
 secrets:
   enabled: false          # Set true once IRSA role + SecretProviderClass exist
@@ -15,7 +15,7 @@ secrets:
   # Example:
   # envVars:
   #   - name: API_KEY
-  #     secretName: helloworld-secrets
+  #     secretName: app-secrets
   #     key: API_KEY
 service:
   type: ClusterIP

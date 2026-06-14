@@ -7,7 +7,7 @@ deployment:
 
 
 domains:
-  helloworldApp: helloworldapp.wolffialampang.com
+  appApp: appapp.wolffialampang.com
   userApp: userapp.wolffialampang.com
   prometheusApp: prometheus.wolffialampang.com
   argocd: argocd.wolffialampang.com
@@ -15,8 +15,8 @@ domains:
   traefik: traefik.wolffialampang.com
 
 
-helloworld:
-  serviceName: helloworld-svc
+app:
+  serviceName: app-svc
   namespace: prod-app
 
 argocd:

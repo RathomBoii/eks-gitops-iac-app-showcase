@@ -7,11 +7,11 @@ spec:
   entryPoints:
     - websecure # 443
   routes:
-    - match: "Host(`{{ .Values.domains.helloworldApp }}`)"
+    - match: "Host(`{{ .Values.domains.appApp }}`)"
       kind: Rule
       services:
-        - name: {{ .Values.helloworld.serviceName }}
-          namespace: {{ .Values.helloworld.namespace }}
+        - name: {{ .Values.app.serviceName }}
+          namespace: {{ .Values.app.namespace }}
           port: 8000
     - match: "Host(`{{ .Values.domains.userApp }}`)"
       kind: Rule

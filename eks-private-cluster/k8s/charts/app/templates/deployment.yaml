@@ -3,22 +3,22 @@ kind: Deployment
 metadata:
   name: {{ .Release.Name }}
   labels:
-    app: helloworld
+    app: app
     env: {{ .Values.env }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      app: helloworld
+      app: app
   template:
     metadata:
       labels:
-        app: helloworld
+        app: app
         env: {{ .Values.env }}
     spec:
       serviceAccountName: {{ .Release.Name }}
       containers:
-        - name: helloworld
+        - name: app
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:

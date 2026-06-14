@@ -9,5 +9,5 @@ serviceAccount:
   irsaRoleArn: "arn:aws:iam::<PROD_ACCOUNT_ID>:role/<PROD_ROLE_NAME>"
 
 externalSecret:
-  name: helloworld-secrets   # must match secretName in helloworld values-prod.yaml
-  key: "prod/helloworld"     # AWS Secrets Manager secret name
+  name: app-secrets   # must match secretName in app values-prod.yaml
+  key: "prod/app"     # AWS Secrets Manager secret name
