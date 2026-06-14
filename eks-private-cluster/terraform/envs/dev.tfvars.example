@@ -25,32 +25,32 @@ admin_principal_arns = [
 ]
 
 # ECR
-ecr_repo_name            = "helloworld"
+ecr_repo_name            = "app"
 ecr_image_tag_mutability = "MUTABLE"
 
 # Terraform state bucket — must exist before first apply (see README Step 0)
 tfstate_bucket = "<STATE_BUCKET_NAME>"
 
 # App
-helloworld_image_tag  = "latest"
-helloworld_replicas   = 1
-argocd_version        = "6.7.0"
-helloworld_namespace  = "dev-app"
-# helloworld_api_key_value — do NOT set here. Pass via env var:
-#   export TF_VAR_helloworld_api_key_value="your-secret-value"
+app_image_tag  = "latest"
+app_replicas   = 1
+argocd_version = "6.7.0"
+app_namespace  = "dev-app"
+# app_api_key_value — do NOT set here. Pass via env var:
+#   export TF_VAR_app_api_key_value="your-secret-value"
 
 # ESO (External Secrets Operator)
 eso_namespace            = "external-secrets"
 eso_service_account_name = "eks-secret-store-irsa"
 
-# RDS PostgreSQL
+# RDS PostgreSQL — smallest instance, no HA for dev
 rds_db_identifier           = "postgres-dev"
 rds_db_name                 = "appdb"
 rds_db_username             = "pgadmin"
 rds_instance_class          = "db.t3.micro"
 rds_multi_az                = false
-rds_backup_retention_period = 1
-rds_skip_final_snapshot     = true
+rds_backup_retention_period = 1    # 1 day is enough for dev
+rds_skip_final_snapshot     = true # Allow destroy without snapshot in dev
 rds_deletion_protection     = false
 
 # GitHub Actions CI/CD
