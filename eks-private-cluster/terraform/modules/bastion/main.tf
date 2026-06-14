@@ -2,9 +2,12 @@ data "aws_ami" "amazon_linux" {
   most_recent = true
   owners      = ["amazon"]
 
+  # "al2023-ami-2023*" matches the full AMI (al2023-ami-2023.x.x-kernel-x-x86_64)
+  # but NOT the minimal variant (al2023-ami-minimal-2023.x.x-...) which lacks
+  # ec2-instance-connect — required for EICE SSH key injection to work.
   filter {
     name   = "name"
-    values = ["al2023-ami-*-x86_64"]
+    values = ["al2023-ami-2023*-x86_64"]
   }
 }
 
