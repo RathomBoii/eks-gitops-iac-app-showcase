@@ -15,7 +15,7 @@ metadata:
   name: prometheus
   namespace: argocd
   finalizers:
-    - resources-finalizer.argocd.argoproj.io  # cascade-delete all Prometheus resources when this Application is deleted
+    - resources-finalizer.argocd.argoproj.io/foreground  # cascade-delete all Prometheus resources when this Application is deleted
 spec:
   project: default
 
