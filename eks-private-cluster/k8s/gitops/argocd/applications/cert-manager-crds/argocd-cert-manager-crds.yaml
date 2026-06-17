@@ -30,6 +30,8 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - Replace=true   # force CRDs to be applied via kubectl replace — required because ArgoCD
+                       # skips CRD creation with ServerSideApply when the schema is not yet known
   ignoreDifferences:
     # ArgoCD's internal schema does not declare .status.terminatingReplicas on Deployments
     # causing structured merge diff to fail with ComparisonError — safe to ignore
