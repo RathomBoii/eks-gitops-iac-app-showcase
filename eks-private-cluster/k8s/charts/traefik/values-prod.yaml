@@ -2,9 +2,20 @@ namespace: traefik
 
 serviceAccountName: traefik-service-account
 
+image:
+  repository: traefik
+  tag: "v3.0.0"
+
 deployment:
   replicas: 2
 
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "300m"
+    memory: "256Mi"
 
 domains:
   appApp: appapp.wolffialampang.com
