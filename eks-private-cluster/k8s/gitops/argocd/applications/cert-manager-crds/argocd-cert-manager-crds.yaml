@@ -29,9 +29,8 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
-      - ServerSideApply=true
-      - Replace=true   # force CRDs to be applied via kubectl replace — required because ArgoCD
-                       # skips CRD creation with ServerSideApply when the schema is not yet known
+      - Replace=true   # use kubectl replace for CRDs — required because SSA (ServerSideApply) causes
+                       # ArgoCD to skip --include-crds flag, so CRDs are never rendered or applied
   ignoreDifferences:
     # ArgoCD's internal schema does not declare .status.terminatingReplicas on Deployments
     # causing structured merge diff to fail with ComparisonError — safe to ignore
