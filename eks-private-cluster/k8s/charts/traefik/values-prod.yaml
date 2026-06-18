@@ -47,7 +47,7 @@ app:
   namespace: prod-app
 
 argocd:
-  serviceName: argocd-server
+  serviceName: argocd-server   # helm upgrade created this name (no release prefix)
   namespace: argocd
   port: 80
   enabled: true

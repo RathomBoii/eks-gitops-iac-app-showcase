@@ -13,34 +13,42 @@ spec:
         - name: {{ .Values.app.serviceName }}
           namespace: {{ .Values.app.namespace }}
           port: 8000
+    {{- if .Values.userApp.enabled }}
     - match: "Host(`{{ .Values.domains.userApp }}`)"
       kind: Rule
       services:
         - name: {{ .Values.userApp.serviceName }}
           namespace: {{ .Values.userApp.namespace }}
-          port: 3000
+          port: {{ default 3000 .Values.userApp.port }}
+    {{- end }}
+    {{- if .Values.prometheus.enabled }}
     - match: "Host(`{{ .Values.domains.prometheusApp }}`)"
       kind: Rule
       services:
         - name: {{ .Values.prometheus.serviceName }}
           namespace: {{ .Values.prometheus.namespace }}
-          port: 3000
+          port: {{ default 9090 .Values.prometheus.port }}
+    {{- end }}
     # ArgoCD: must run with --insecure flag so it accepts plain HTTP from Traefik
     # [Client] ──HTTPS──▶ Traefik (terminates TLS) ──HTTP──▶ ArgoCD service:80 ──▶ pod:8080
+    {{- if .Values.argocd.enabled }}
     - match: "Host(`{{ .Values.domains.argocd }}`)"
       kind: Rule
       services:
         - name: {{ .Values.argocd.serviceName }}
           namespace: {{ .Values.argocd.namespace }}
-          port: 80  # ArgoCD Service port 80 maps to container port 8080 when --insecure is set
+          port: {{ default 80 .Values.argocd.port }}
+    {{- end }}
     # Grafana: must run with --insecure flag so it accepts plain HTTP from Traefik
     # [Client] ──HTTPS──▶ Traefik (terminates TLS) ──HTTP──▶ Grafana pod:3000
+    {{- if .Values.grafana.enabled }}
     - match: "Host(`{{ .Values.domains.grafana }}`)"
       kind: Rule
       services:
         - name: {{ .Values.grafana.serviceName }}
           namespace: {{ .Values.grafana.namespace }}
-          port: 3000  # Grafana HTTP port (not 443), requires --insecure on grafana-server
+          port: {{ default 80 .Values.grafana.port }}
+    {{- end }}
     # Traefik Dashboard: protected by BasicAuth middleware.
     # Routes to api@internal (Traefik's built-in API/dashboard service).
     # Secret must be created manually: kubectl create secret generic traefik-dashboard-auth-secret -n traefik --from-literal=users='...'
