@@ -84,5 +84,5 @@ eso:
     name: "traefik-dashboard-auth"     # must match the middleware name referenced in ingressroute.yaml
     secretName: traefik-dashboard-auth-secret
   monitoringAuth: 
-    name: "monitoring-auth"            # must match the middleware name referenced in ingressroute.yaml
-    secretName: monitoring-auth-secret
+    name: "traefik-monitoring-auth"            # must match the middleware name referenced in ingressroute.yaml
+    secretName: traefik-monitoring-auth-secret

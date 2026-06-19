@@ -25,7 +25,7 @@ spec:
     - match: "Host(`{{ .Values.domains.prometheusApp }}`)"
       kind: Rule
       middlewares:
-        - name: monitoring-auth  # BasicAuth — create secret: kubectl create secret generic monitoring-auth-secret -n traefik --from-literal=users='admin:<htpasswd-hash>'
+        - name: traefik-monitoring-auth  # BasicAuth — create secret: kubectl create secret generic traefik-monitoring-auth-secret -n traefik --from-literal=users='admin:<htpasswd-hash>'
       services:
         - name: {{ .Values.prometheus.serviceName }}
           namespace: {{ .Values.prometheus.namespace }}
@@ -47,7 +47,7 @@ spec:
     - match: "Host(`{{ .Values.domains.grafana }}`)"
       kind: Rule
       middlewares:
-        - name: monitoring-auth  # same BasicAuth secret as Prometheus
+        - name: traefik-monitoring-auth  # same BasicAuth secret as Prometheus
       services:
         - name: {{ .Values.grafana.serviceName }}
           namespace: {{ .Values.grafana.namespace }}
