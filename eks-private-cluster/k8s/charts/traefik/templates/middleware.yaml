@@ -30,11 +30,11 @@
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: traefik-dashboard-auth
+  name: {{ .Values.eso.dashboardAuth.key }}
   namespace: {{ .Values.namespace }}
 spec:
   basicAuth:
-    secret: traefik-dashboard-auth-secret
+    secret: {{ .Values.eso.dashboardAuth.secretName }}
 ---
 
 # -----------------------------------------------------------------------------
@@ -49,11 +49,11 @@ spec:
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: monitoring-auth
+  name: {{ .Values.eso.monitoringAuth.key }}
   namespace: {{ .Values.namespace }}
 spec:
   basicAuth:
-    secret: monitoring-auth-secret
+    secret: {{ .Values.eso.monitoringAuth.secretName }}
 ---
 
 

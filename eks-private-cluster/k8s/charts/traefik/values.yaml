@@ -46,3 +46,12 @@ resources:
   limits:
     cpu: 500m
     memory: 256Mi
+
+# External Secrets Operator — pulls BasicAuth credentials from AWS Secrets Manager.
+# Set enabled: true in environment values to activate.
+eso:
+  enabled: false
+  clusterSecretStoreName: secret-store  # must match secretStore.name in secret-store chart
+  refreshInterval: "1h"
+  dashboardAuthKey: "traefik/dashboard-auth"   # AWS SM secret name (JSON: {"users": "admin:$hash"})
+  monitoringAuthKey: "traefik/monitoring-auth" # AWS SM secret name (JSON: {"users": "admin:$hash"})

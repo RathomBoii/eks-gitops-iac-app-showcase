@@ -15,9 +15,11 @@ appExternalSecret:
   key: "prod/app"        # AWS Secrets Manager secret name
 
 traefikDashboardAuthExternalSecret:
+  name: traefik-dashboard-auth-secret
   enabled: true
-  key: "prod/traefik-dashboard-auth-secret"   # AWS SM secret name (JSON: {"users": "admin:$hash"})
+  key: "prod/traefik-dashboard-auth-secret"   # AWS SM secret name
 
-traefikMonitoringAuthExternalSecret:
+grafanaMonitoringAuthExternalSecret:
+  name: grafana-monitoring-auth-secret 
   enabled: true
-  key: "prod/traefik-monitoring-auth-secret"  # AWS SM secret name (JSON: {"users": "admin:$hash"})
+  key: "prod/grafana-monitoring-auth-secret"  # AWS SM secret name 

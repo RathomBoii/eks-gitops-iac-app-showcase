@@ -69,3 +69,20 @@ prometheus:
   namespace: monitoring
   port: 9090
   enabled: true
+
+# External Secrets Operator — pulls BasicAuth credentials from AWS Secrets Manager.
+# AWS SM secrets must exist before syncing this chart:
+#   aws secretsmanager create-secret --name traefik/dashboard-auth \
+#     --secret-string '{"users":"admin:<htpasswd-bcrypt-hash>"}'
+#   aws secretsmanager create-secret --name traefik/monitoring-auth \
+#     --secret-string '{"users":"admin:<htpasswd-bcrypt-hash>"}'
+eso:
+  enabled: true
+  clusterSecretStoreName: secret-store  # must match secretStore.name in secret-store values-prod.yaml
+  refreshInterval: "1h"
+  dashboardAuth: 
+    key: "traefik/dashboard-auth"
+    secretName: traefik-dashboard-auth-secret
+  monitoringAuth: 
+    key: "grafana/monitoring-auth"
+    secretName: grafana-monitoring-auth-secret
