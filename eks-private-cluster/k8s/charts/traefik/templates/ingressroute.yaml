@@ -53,21 +53,16 @@ spec:
           namespace: {{ .Values.grafana.namespace }}
           port: {{ default 80 .Values.grafana.port }}
     {{- end }}
-    {{- if .Values.traefik.enabled }}
     # Traefik Dashboard: protected by BasicAuth middleware.
-    # Routes to api@internal (Traefik's built-in API/dashboard service).
-    # Secret must be created manually: kubectl create secret generic traefik-dashboard-auth-secret -n traefik --from-literal=users='...'
+    # api@internal is Traefik's built-in virtual service — NOT a Kubernetes Service.
+    # Do NOT replace with the traefik LoadBalancer Service (causes routing loop).
     - match: "Host(`{{ .Values.domains.traefik }}`)"
       kind: Rule
       middlewares:
         - name: traefik-dashboard-auth
       services:
-        - name: {{ .Values.traefik.serviceName }}
-          namespace: {{ .Values.traefik.namespace }}
-          port: {{ default 80 .Values.traefik.port }}
-        # - name: api@internal
-        #   kind: TraefikService
-  {{- end }}
+        - name: api@internal
+          kind: TraefikService
   # routes:
   # - match: Host(`example.com`) && PathPrefix(`/api`)
   #   kind: Rule
