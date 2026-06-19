@@ -69,3 +69,9 @@ prometheus:
   namespace: monitoring
   port: 9090
   enabled: true
+
+traefik:
+  serviceName: traefik
+  namespace: traefik
+  port: 443
+  enabled: true
