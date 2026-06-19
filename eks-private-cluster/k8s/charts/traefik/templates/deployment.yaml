@@ -31,11 +31,26 @@ spec:
             - --log.level=INFO
             - --api.dashboard=true
             - --api=true
+            # Access logs — log every request with status, latency, backend
+            - --accesslog=true
+            - --accesslog.format=json
+            # Metrics — expose Prometheus scrape endpoint on :8082/metrics
+            - --metrics.prometheus=true
+            - --metrics.prometheus.entrypoint=metrics
+            - --entrypoints.metrics.address=:8082
+            # Tracing — OTLP to stdout (no external collector needed to enable the feature)
+            # To send to a real collector: replace with --tracing.otlp.grpc.endpoint=<collector>:4317
+            - --tracing.otlp=true
+            - --tracing.otlp.grpc.insecure=true
+            - --tracing.otlp.grpc.endpoint=localhost:4317
+            - --tracing.serviceName=traefik
           ports:
             - name: web
               containerPort: 80
             - name: websecure
               containerPort: 443
+            - name: metrics
+              containerPort: 8082
           resources:
             requests:
               cpu: {{ .Values.resources.requests.cpu }}
