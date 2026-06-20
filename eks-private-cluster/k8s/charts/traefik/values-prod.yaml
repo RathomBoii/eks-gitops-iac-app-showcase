@@ -34,7 +34,7 @@ resources:
     memory: "256Mi"
 
 domains:
-  appApp: appapp.wolffialampang.com
+  app: app.wolffialampang.com
   userApp: userapp.wolffialampang.com
   prometheusApp: prometheus.wolffialampang.com
   argocd: argocd.wolffialampang.com

@@ -7,7 +7,7 @@ spec:
   entryPoints:
     - websecure # 443
   routes:
-    - match: "Host(`{{ .Values.domains.appApp }}`)"
+    - match: "Host(`{{ .Values.domains.app }}`)"
       kind: Rule
       services:
         - name: {{ .Values.app.serviceName }}
