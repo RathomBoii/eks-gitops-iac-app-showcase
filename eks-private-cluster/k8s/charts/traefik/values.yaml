@@ -1,5 +1,5 @@
 domains:
-  appApp: "hellowworld.example.com"
+  app: "hellowworld.example.com"
   userApp: "user.example.com"
   prometheusApp: "prometheus.example.com"
   argocd: "argocd.example.com"

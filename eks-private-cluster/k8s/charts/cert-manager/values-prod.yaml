@@ -8,7 +8,7 @@ secretName: "traefik-tls"
 dnsNames:
   - argocd.wolffialampang.com
   - grafana.wolffialampang.com
-  - appapp.wolffialampang.com
+  - app.wolffialampang.com
   - userapp.wolffialampang.com
   - prometheus.wolffialampang.com
   - traefik.wolffialampang.com
