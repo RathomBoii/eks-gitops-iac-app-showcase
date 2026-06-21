@@ -1,10 +1,10 @@
 from contextlib import asynccontextmanager
 import logging
 
-from fastapi import FastAPI
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor
-from prometheus_fastapi_instrumentator import Instrumentator
+from fastapi import FastAPI # pyright: ignore[reportMissingImports]
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor # pyright: ignore[reportMissingImports]
+from opentelemetry.instrumentation.psycopg2 import Psycopg2Instrumentor # pyright: ignore[reportMissingImports]
+from prometheus_fastapi_instrumentator import Instrumentator # pyright: ignore[reportMissingImports]
 
 from service.controller import health_controller, oil_price_controller, user_controller
 from service.logging_config import setup_logging
@@ -55,6 +55,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── Routers ─────────────────────────────────────────────────────────────────
+# Must be registered BEFORE the Prometheus instrumentator attaches. If the
+# instrumentator is added first, FastAPI leaves an internal `_IncludedRouter`
+# entry in `app.routes` with no `.path`, which makes the metrics middleware
+# raise AttributeError on every request (500 on all endpoints, incl. /health).
+app.include_router(health_controller.router)
+app.include_router(user_controller.router)
+app.include_router(oil_price_controller.router)
+
 # ── Phase 3: OTel tracing — auto-instrument every FastAPI route ─────────────
 # Creates a root span per HTTP request with method, route, status code attributes.
 FastAPIInstrumentor.instrument_app(app)
@@ -63,10 +72,6 @@ FastAPIInstrumentor.instrument_app(app)
 # Instruments all routes: http_request_duration_seconds (histogram),
 # http_requests_total (counter), http_requests_in_progress (gauge).
 Instrumentator().instrument(app).expose(app)
-
-app.include_router(health_controller.router)
-app.include_router(user_controller.router)
-app.include_router(oil_price_controller.router)
 
 
 
