@@ -1,6 +1,6 @@
 # ── ArgoCD Application: Tempo ─────────────────────────────────────────────────
 # Deploys Grafana Tempo (distributed trace backend) into the monitoring namespace.
-# The app sends OTLP gRPC traces to tempo:4317 → Tempo stores them → Grafana queries port 3100.
+# The app sends OTLP (OpenTelemetry Protocol) gRPC traces to tempo:4317 → Tempo stores them → Grafana queries port 3100.
 #
 # Apply: kubectl apply -f argocd-app-tempo.yaml
 # ─────────────────────────────────────────────────────────────────────────────
