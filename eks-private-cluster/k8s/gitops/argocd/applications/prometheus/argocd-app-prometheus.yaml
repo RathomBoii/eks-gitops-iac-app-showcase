@@ -2,12 +2,12 @@
 # Apply this manifest with:  kubectl apply -f argocd-app-prometheus.yaml
 #
 # ArgoCD will:
-#  1. Clone the repo
-#  2. Find the chart at the path below
-#  3. Run helm dependency update to pull kube-prometheus-stack
-#  4. Render the chart with values.yaml (values-prod.yaml)
-#  5. Deploy all Prometheus/Grafana resources into the monitoring namespace
-#  6. Watch for changes in Git and auto-sync forever
+#  1. Pull the upstream kube-prometheus-stack chart from the Helm registry
+#  2. Render it with values-prod.yaml from this Git repo
+#  3. Deploy only Prometheus + Operator into the monitoring namespace
+#     (Grafana, Alertmanager, node-exporter, kube-state-metrics are disabled
+#      in values-prod.yaml — each deployed separately or not needed yet)
+#  4. Watch for changes in Git and auto-sync forever
 # ─────────────────────────────────────────────────────────────────────────────
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -19,19 +19,38 @@ metadata:
 spec:
   project: default
 
+  # ── Why 2 sources? ───────────────────────────────────────────────────────────
+  # ArgoCD cannot fetch a Helm chart and a Git file in a single source — they
+  # live in different locations (Helm registry vs. Git repo).
+  #
+  # Source 1 pulls the kube-prometheus-stack chart package from the Helm registry.
+  # Source 2 mounts this Git repo as a variable ($values) so Source 1 can
+  # reference values-prod.yaml inside it via the valueFiles field.
+  #
+  # Alternative — inline values directly in Source 1 using `helm.values: |`:
+  #   • No second source needed
+  #   • But all config is embedded in this manifest, making it harder to read
+  #     and requiring edits here for every config change
+  #
+  # The 2-source pattern keeps concerns separated:
+  #   • This file       → chart version + ArgoCD sync behaviour (changes rarely)
+  #   • values-prod.yaml → Prometheus config (changes often)
+  # ─────────────────────────────────────────────────────────────────────────────
   sources:
-    # Source 1: upstream kube-prometheus-stack chart from Helm repo (no wrapper chart needed)
+    # Source 1: upstream kube-prometheus-stack chart from Helm registry
     - repoURL: https://prometheus-community.github.io/helm-charts
       chart: kube-prometheus-stack
-      targetRevision: "72.3.0"  # pin chart version — upgrade by changing this value
+      targetRevision: "87.2.0"  # pin chart version — upgrade by changing this value
       helm:
         valueFiles:
           - $values/eks-private-cluster/k8s/gitops/argocd/values/prometheus/values-prod.yaml
+          # $values is the alias created by Source 2 below — it resolves to the
+          # root of this Git repo, so the path above points to our values file.
 
-    # Source 2: this Git repo — only used to provide the values file via $values reference above
+    # Source 2: this Git repo — not deployed, only used to expose $values alias
     - repoURL: https://github.com/RathomBoii/technical-refresh.git
       targetRevision: main
-      ref: values  # exposes this source as $values variable used in valueFiles above
+      ref: values  # ref: creates the $values variable referenced in Source 1 valueFiles
 
   destination:
     server: https://kubernetes.default.svc  # deploy into the same cluster ArgoCD lives in
