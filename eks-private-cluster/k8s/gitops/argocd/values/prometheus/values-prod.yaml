@@ -75,8 +75,8 @@ prometheus:
         secret:
           type: S3
           config:
-            bucket: my-prometheus-thanos
-            region: ap-southeast-1
+            bucket: jessada-prometheus-thanos-metric-storage
+            region: ap-southeast-7
             # On EKS use IRSA — no access keys needed:
             # endpoint and credentials come from the pod's IAM role
 
