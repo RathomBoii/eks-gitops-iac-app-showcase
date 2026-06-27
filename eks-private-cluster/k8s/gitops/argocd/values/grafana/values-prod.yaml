@@ -128,30 +128,27 @@ grafana.ini:
     password: "${GF_DATABASE_PASSWORD}"
     ssl_mode: require
 
-# ── Database password injected as env var ─────────────────────────────────────
-# Grafana resolves ${GF_DATABASE_PASSWORD} in grafana.ini at startup.
-# The value comes from the K8s Secret created by the ExternalSecret above.
-env:
+# ── Database credentials injected as env vars ─────────────────────────────────
+# Grafana resolves ${GF_DATABASE_*} and ${POSTGRES_HOST} in grafana.ini at startup.
+# envValueFrom (not env) is required for secretKeyRef — the Grafana chart only
+# supports simple key:value pairs under `env`; valueFrom refs must go here.
+envValueFrom:
   GF_DATABASE_PASSWORD:
-    valueFrom:
-      secretKeyRef:
-        name: grafana-credentials
-        key: db_password
+    secretKeyRef:
+      name: grafana-credentials
+      key: db_password
   GF_DATABASE_NAME:
-    valueFrom:
-      secretKeyRef:
-        name: grafana-credentials
-        key: db_name
+    secretKeyRef:
+      name: grafana-credentials
+      key: db_name
   GF_DATABASE_USER:
-    valueFrom:
-      secretKeyRef:
-        name: grafana-credentials
-        key: db_user
+    secretKeyRef:
+      name: grafana-credentials
+      key: db_user
   POSTGRES_HOST:
-    valueFrom:
-      secretKeyRef:
-        name: grafana-credentials
-        key: db_host
+    secretKeyRef:
+      name: grafana-credentials
+      key: db_host
 
 # ── Ingress ───────────────────────────────────────────────────────────────────
 ingress:
