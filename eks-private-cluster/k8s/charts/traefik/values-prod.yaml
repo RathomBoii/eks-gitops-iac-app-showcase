@@ -59,7 +59,7 @@ userApp:
   enabled: false
 
 grafana:
-  serviceName: prometheus-grafana
+  serviceName: grafana
   namespace: monitoring
   port: 80
   enabled: true
