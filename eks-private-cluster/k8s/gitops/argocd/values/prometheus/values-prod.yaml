@@ -77,8 +77,9 @@ prometheus:
           config:
             bucket: jessada-prometheus-thanos-metric-storage
             region: ap-southeast-7
+            endpoint: s3.ap-southeast-7.amazonaws.com  # required by objstore v0.0.0-20250804+; constructed from region
             # On EKS use IRSA — no access keys needed:
-            # endpoint and credentials come from the pod's IAM role
+            # credentials come from the pod's IAM role (no access_key / secret_key needed)
 
 
 
