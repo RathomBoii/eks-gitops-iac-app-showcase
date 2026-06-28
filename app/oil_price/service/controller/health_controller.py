@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query # type: ignore
 
 from service.repository.connection import get_conn
 from service.repository.postgres_oil_price_repository import PostgresOilPriceRepository

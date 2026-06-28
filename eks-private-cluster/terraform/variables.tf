@@ -157,12 +157,6 @@ variable "rds_deletion_protection" {
 }
 
 # ── IAM / App secrets ─────────────────────────────────────────────────────────
-variable "app_namespace" {
-  description = "Kubernetes namespace where app is deployed"
-  type        = string
-  default     = "dev-app"
-}
-
 variable "app_api_key_value" {
   description = "Initial value for app API key secret in Secrets Manager. Pass via TF_VAR_app_api_key_value env var — never commit to tfvars."
   type        = string

@@ -3,7 +3,8 @@ env    = "dev"
 region = "ap-southeast-7"
 
 # Cluster
-cluster_name = "eks-dev"
+cluster_name       = "eks-dev"
+kubernetes_version = "1.31"
 
 # Network
 vpc_cidr              = "10.4.0.0/16"
@@ -19,17 +20,38 @@ max_nodes          = 3
 
 # EKS Admin Access — add IAM user/role ARNs that need kubectl access
 admin_principal_arns = [
-  "arn:aws:iam::<AWS_ACCOUNT_ID>:role/<EKS_ADMIN_ROLE_NAME>",
+  "arn:aws:iam::687069305167:user/Jessada.S",
 ]
 
 # ECR
-ecr_repo_name            = "helloworld"
+ecr_repo_name            = "app"
 ecr_image_tag_mutability = "MUTABLE"
 
 # Terraform state bucket — required for bastion to run terraform apply
-tfstate_bucket = "<TFSTATE_BUCKET_NAME>"
+tfstate_bucket = "eks-app-jessada-demo"
 
 # App
-helloworld_image_tag = "latest"
-helloworld_replicas  = 1
-argocd_version       = "6.7.0"
+app_image_tag  = "latest"
+app_replicas   = 1
+argocd_version = "6.7.0"
+# app_api_key_value — do NOT set here. Pass via env var:
+#   export TF_VAR_app_api_key_value="your-secret-value"
+
+# ESO (External Secrets Operator)
+eso_namespace            = "external-secrets"
+eso_service_account_name = "eks-secret-store-irsa"
+
+# RDS PostgreSQL — smallest instance, no HA for dev
+rds_db_identifier           = "postgres-dev"
+rds_db_name                 = "appdb"
+rds_db_username             = "pgadmin"
+rds_instance_class          = "db.t3.micro"
+rds_multi_az                = false
+rds_backup_retention_period = 1    # 1 day is enough for dev
+rds_skip_final_snapshot     = true # Allow destroy without snapshot in dev
+rds_deletion_protection     = false
+
+# GitHub Actions CI/CD
+github_org                  = "RathomBoii"
+github_repo                 = "technical-refresh"
+create_github_oidc_provider = true # true on dev (first env) — account-scoped, only create once

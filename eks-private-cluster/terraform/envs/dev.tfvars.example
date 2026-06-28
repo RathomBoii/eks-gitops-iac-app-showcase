@@ -35,7 +35,6 @@ tfstate_bucket = "<STATE_BUCKET_NAME>"
 app_image_tag  = "latest"
 app_replicas   = 1
 argocd_version = "6.7.0"
-app_namespace  = "dev-app"
 # app_api_key_value — do NOT set here. Pass via env var:
 #   export TF_VAR_app_api_key_value="your-secret-value"
 

@@ -28,11 +28,6 @@ output "public_subnet_ids" {
   value       = module.vpc.public_subnet_ids
 }
 
-output "app_irsa_role_arn" {
-  description = "IAM role ARN for app pod — use as serviceAccount.roleArn in values-dev/prod.yaml"
-  value       = module.iam.app_role_arn
-}
-
 output "app_api_key_secret_name" {
   description = "Secrets Manager secret name for app api-key — use as objectName in SecretProviderClass"
   value       = module.secrets.app_api_key_secret_name

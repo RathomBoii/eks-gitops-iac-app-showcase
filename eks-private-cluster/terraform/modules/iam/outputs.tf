@@ -1,13 +1,3 @@
-output "app_role_arn" {
-  description = "IAM role ARN for app pod — paste into values-dev/prod.yaml as serviceAccount.roleArn"
-  value       = aws_iam_role.app.arn
-}
-
-output "app_api_key_secret_name" {
-  description = "Secrets Manager secret name — use as objectName in SecretProviderClass"
-  value       = var.app_api_key_secret_name
-}
-
 output "lbc_role_arn" {
   description = "IAM role ARN for AWS Load Balancer Controller — use in helm install --set serviceAccount.annotations"
   value       = aws_iam_role.lbc.arn

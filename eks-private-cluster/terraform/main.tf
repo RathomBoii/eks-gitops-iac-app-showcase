@@ -16,13 +16,13 @@ provider "aws" {
 # }
 
 module "vpc" {
-  source          = "./modules/vpc"
-  env             = var.env
-  cluster_name    = var.cluster_name
-  vpc_cidr        = var.vpc_cidr
-  private_subnets = var.private_subnets
-  public_subnets  = var.public_subnets
-  region          = var.region
+  source                = "./modules/vpc"
+  env                   = var.env
+  cluster_name          = var.cluster_name
+  vpc_cidr              = var.vpc_cidr
+  private_subnets       = var.private_subnets
+  public_subnets        = var.public_subnets
+  region                = var.region
   is_single_nat_gateway = var.is_single_nat_gateway
 }
 
@@ -43,15 +43,15 @@ module "eks" {
 }
 
 module "bastion" {
-  source                       = "./modules/bastion"
-  env                          = var.env
-  vpc_id                       = module.vpc.vpc_id
-  vpc_cidr                     = module.vpc.vpc_cidr
-  private_subnet_id            = module.vpc.private_subnet_ids[0]
-  cluster_name                 = var.cluster_name
-  region                       = var.region
-  instance_type                = var.bastion_instance_type
-  tfstate_bucket               = var.tfstate_bucket
+  source                        = "./modules/bastion"
+  env                           = var.env
+  vpc_id                        = module.vpc.vpc_id
+  vpc_cidr                      = module.vpc.vpc_cidr
+  private_subnet_id             = module.vpc.private_subnet_ids[0]
+  cluster_name                  = var.cluster_name
+  region                        = var.region
+  instance_type                 = var.bastion_instance_type
+  tfstate_bucket                = var.tfstate_bucket
   eks_cluster_security_group_id = module.eks.cluster_security_group_id
 }
 
@@ -81,9 +81,9 @@ module "rds" {
 }
 
 module "secrets" {
-  source                   = "./modules/secrets"
+  source = "./modules/secrets"
 
-  env                      = var.env
+  env               = var.env
   app_api_key_value = var.app_api_key_value
 }
 
@@ -94,9 +94,6 @@ module "iam" {
   region            = var.region
   oidc_provider_arn = module.eks.oidc_provider_arn
   oidc_provider     = module.eks.oidc_provider
-
-  app_namespace           = var.app_namespace
-  app_api_key_secret_name = module.secrets.app_api_key_secret_name
 
   eso_namespace            = var.eso_namespace
   eso_service_account_name = var.eso_service_account_name

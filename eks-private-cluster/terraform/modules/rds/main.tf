@@ -66,10 +66,10 @@ resource "aws_db_instance" "this" {
   engine_version = "16.1" # Check available versions: aws rds describe-db-engine-versions --engine postgres --region ap-southeast-7 --query 'DBEngineVersions[*].EngineVersion'
   instance_class = var.instance_class
 
-  allocated_storage     = 20    # Minimum allowed by AWS
-  max_allocated_storage = 50   # Auto-scaling cap — prevents surprise bills
+  allocated_storage     = 20 # Minimum allowed by AWS
+  max_allocated_storage = 50 # Auto-scaling cap — prevents surprise bills
   storage_type          = "gp2"
-  storage_encrypted     = true  # Encryption at rest — required for any PII data
+  storage_encrypted     = true # Encryption at rest — required for any PII data
 
   db_name  = var.db_name
   username = var.db_username
@@ -85,7 +85,7 @@ resource "aws_db_instance" "this" {
   backup_window           = "03:00-04:00" # UTC — low-traffic window
   maintenance_window      = "Mon:04:00-Mon:05:00"
 
-  skip_final_snapshot      = var.skip_final_snapshot
+  skip_final_snapshot = var.skip_final_snapshot
   # Required by AWS when skip_final_snapshot = false (prod).
   # Ignored when skip_final_snapshot = true (dev).
   final_snapshot_identifier = var.skip_final_snapshot ? null : "${var.db_identifier}-final-snapshot"

@@ -18,17 +18,6 @@ variable "oidc_provider" {
   type        = string
 }
 
-variable "app_namespace" {
-  description = "Kubernetes namespace where app is deployed (must match helm chart destination)"
-  type        = string
-  default     = "dev-app"
-}
-
-variable "app_api_key_secret_name" {
-  description = "Secrets Manager secret name from the secrets module — passed through to output for convenience"
-  type        = string
-}
-
 variable "eso_namespace" {
   description = "Kubernetes namespace where External Secrets Operator is deployed (must match ArgoCD destination namespace)"
   type        = string

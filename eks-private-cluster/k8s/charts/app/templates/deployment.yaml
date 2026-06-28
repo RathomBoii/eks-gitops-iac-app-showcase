@@ -16,7 +16,6 @@ spec:
         app: app
         env: {{ .Values.env }}
     spec:
-      serviceAccountName: {{ .Release.Name }}
       containers:
         - name: app
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

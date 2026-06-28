@@ -1,5 +1,7 @@
 from contextlib import asynccontextmanager
+import asyncio
 import logging
+import random
 
 from fastapi import FastAPI # pyright: ignore[reportMissingImports]
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor # pyright: ignore[reportMissingImports]
@@ -19,6 +21,23 @@ setup_logging()
 setup_tracing()
 
 logger = logging.getLogger(__name__)
+
+_RANDOM_LOG_MESSAGES = [
+    "System heartbeat check passed [for testing only]",
+    "Background worker is alive [for testing only]",
+    "Memory usage within acceptable range [for testing only]",
+    "Cache hit ratio looks healthy [for testing only]",
+    "All downstream services reachable [for testing only]",
+]
+
+_random_log_task: asyncio.Task | None = None
+
+
+async def _emit_random_log_every_10_minutes() -> None:
+    while True:
+        await asyncio.sleep(600)  # 10 minutes
+        message = random.choice(_RANDOM_LOG_MESSAGES)
+        logger.info(message)
 
 
 @asynccontextmanager
@@ -40,10 +59,13 @@ async def lifespan(app: FastAPI):
         pool.putconn(conn)
 
     logger.info("Startup complete — oil price dashboard is ready")
+    _random_log_task = asyncio.create_task(_emit_random_log_every_10_minutes())
     yield
 
     # ── Shutdown ───────────────────────────────────────────────────────────
     logger.info("Shutdown: closing DB connection pool")
+    if _random_log_task:
+        _random_log_task.cancel()
     close_pool()
 
 
