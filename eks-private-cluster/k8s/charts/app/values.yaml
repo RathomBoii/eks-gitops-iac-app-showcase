@@ -6,9 +6,6 @@ image:
   pullPolicy: IfNotPresent
 
 
-serviceAccount:
-  roleArn: "arn:aws:iam::687069305167:role/prod-app"  # Set in values-dev/prod.yaml — IAM role ARN from terraform output
-
 secrets:
   enabled: false          # Set true once app-secrets K8s Secret exists (synced by ESO)
   secretName: app-secrets # Name of the K8s Secret — all keys become env vars via envFrom
