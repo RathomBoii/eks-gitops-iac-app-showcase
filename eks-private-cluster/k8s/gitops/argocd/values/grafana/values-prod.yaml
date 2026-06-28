@@ -118,11 +118,11 @@ persistence:
 # Get the RDS hostname:  terraform -chdir=eks-private-cluster/terraform output db_host
 # What it does: At startup, Grafana reads this and opens a connection to your RDS instance 
 # instead of creating grafana.db (SQLite) on disk. From that point, every dashboard save, 
-# user login, alert rule, and API key is written to RDS instead of the local filesystem.
+# user login, alert rule, dashboard, datasource, and API key is written to RDS instead of the local filesystem.
 grafana.ini:
   database:
     type: postgres
-    host: "${POSTGRES_HOST}:5432"   # replace with actual RDS hostname
+    host: "${POSTGRES_HOST}:5432" 
     name: "${GF_DATABASE_NAME}"
     user: "${GF_DATABASE_USER}"
     password: "${GF_DATABASE_PASSWORD}"
