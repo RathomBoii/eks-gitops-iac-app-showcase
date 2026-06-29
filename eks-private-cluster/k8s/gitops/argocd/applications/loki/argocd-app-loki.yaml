@@ -25,7 +25,7 @@ spec:
           - $values/eks-private-cluster/k8s/gitops/argocd/values/loki/values-prod.yaml
 
     # Source 2: this Git repo — provides the values file via $values reference
-    - repoURL: https://github.com/RathomBoii/technical-refresh.git
+    - repoURL: https://github.com/RathomBoii/eks-gitops-iac-app-showcase.git
       targetRevision: main
       ref: values
 

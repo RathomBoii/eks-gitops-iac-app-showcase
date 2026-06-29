@@ -53,5 +53,5 @@ rds_deletion_protection     = false
 
 # GitHub Actions CI/CD
 github_org                  = "RathomBoii"
-github_repo                 = "technical-refresh"
+github_repo                 = "eks-gitops-iac-app-showcase"
 create_github_oidc_provider = true # true on dev (first env) — account-scoped, only create once

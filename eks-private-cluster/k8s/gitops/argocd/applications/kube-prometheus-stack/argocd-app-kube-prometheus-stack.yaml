@@ -58,7 +58,7 @@ spec:
           # root of this Git repo, so the path above points to our values file.
 
     # Source 2: this Git repo — not deployed, only used to expose $values alias
-    - repoURL: https://github.com/RathomBoii/technical-refresh.git
+    - repoURL: https://github.com/RathomBoii/eks-gitops-iac-app-showcase.git
       targetRevision: main
       ref: values  # ref: creates the $values variable referenced in Source 1 valueFiles
 

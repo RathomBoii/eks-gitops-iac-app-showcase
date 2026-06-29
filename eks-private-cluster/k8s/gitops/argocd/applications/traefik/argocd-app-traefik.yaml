@@ -10,7 +10,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/RathomBoii/technical-refresh.git  # HTTPS — use PAT secret
+    repoURL: https://github.com/RathomBoii/eks-gitops-iac-app-showcase.git  # HTTPS — use PAT secret
     # repoURL: git@github.com:<your-user>/<your-repo>     # SSH  — use SSH key secret
     targetRevision: main
     path: eks-private-cluster/k8s/charts/traefik

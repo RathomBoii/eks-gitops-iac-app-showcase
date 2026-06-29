@@ -10,7 +10,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/RathomBoii/technical-refresh.git
+    repoURL: https://github.com/RathomBoii/eks-gitops-iac-app-showcase.git
     targetRevision: main
     path: eks-private-cluster/k8s/charts/cert-manager
     helm:
