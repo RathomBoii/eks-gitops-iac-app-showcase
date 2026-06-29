@@ -30,6 +30,18 @@ variable "eso_service_account_name" {
   default     = "eks-secret-store-irsa"
 }
 
+variable "grafana_namespace" {
+  description = "Kubernetes namespace where Grafana (kube-prometheus-stack) is deployed"
+  type        = string
+  default     = "monitoring"
+}
+
+variable "grafana_service_account_name" {
+  description = "Grafana ServiceAccount name — must match the SA created by the chart and the eks.amazonaws.com/role-arn annotation in values-prod.yaml (default <release>-grafana)"
+  type        = string
+  default     = "prometheus-grafana"
+}
+
 variable "github_org" {
   description = "GitHub organisation or user name that owns the repo (e.g. RathomBoii)"
   type        = string

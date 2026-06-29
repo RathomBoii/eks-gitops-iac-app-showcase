@@ -46,6 +46,67 @@ resource "aws_iam_role_policy" "eso_secrets" {
   })
 }
 
+# ── Grafana CloudWatch IRSA role ─────────────────────────────────────────────
+# Lets the Grafana ServiceAccount (deployed by kube-prometheus-stack in the
+# monitoring namespace) query CloudWatch. This backs the "CloudWatch" Grafana
+# datasource (authType: default → IRSA), which surfaces the EKS control-plane
+# signals that have no scrapable Prometheus endpoint — notably kube-etcd —
+# from the AWS/EKS CloudWatch namespace.
+#
+# The ServiceAccount name/namespace must match the Grafana SA the chart creates
+# (grafana.serviceAccount.* / the chart's <release>-grafana fullname) and the
+# eks.amazonaws.com/role-arn annotation set on it in values-prod.yaml.
+resource "aws_iam_role" "grafana_cloudwatch" {
+  name = "${var.env}-grafana-cloudwatch-irsa"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = var.oidc_provider_arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${var.oidc_provider}:sub" = "system:serviceaccount:${var.grafana_namespace}:${var.grafana_service_account_name}"
+          "${var.oidc_provider}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+
+  tags = {
+    Name = "${var.env}-grafana-cloudwatch-irsa"
+    Env  = var.env
+  }
+}
+
+# Read-only CloudWatch metrics access. These actions are not resource-scopable
+# (CloudWatch metric APIs operate account/namespace-wide), so Resource = "*".
+# Matches the Grafana-recommended CloudWatch datasource policy (metrics only).
+resource "aws_iam_role_policy" "grafana_cloudwatch" {
+  name = "${var.env}-grafana-cloudwatch-read"
+  role = aws_iam_role.grafana_cloudwatch.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "cloudwatch:ListMetrics",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:DescribeAlarmsForMetric",
+        "cloudwatch:DescribeAlarmHistory",
+        "cloudwatch:GetInsightRuleReport",
+        "tag:GetResources",
+        "ec2:DescribeRegions"
+      ]
+      Resource = "*"
+    }]
+  })
+}
+
 # ── AWS Load Balancer Controller IRSA role ────────────────────────────────────
 # Allows the aws-load-balancer-controller ServiceAccount in kube-system to
 # create/manage NLBs and ALBs in response to LoadBalancer services and Ingresses.

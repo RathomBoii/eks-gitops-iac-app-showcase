@@ -7,6 +7,11 @@ output "eso_role_arn" {
   value       = aws_iam_role.eso.arn
 }
 
+output "grafana_cloudwatch_role_arn" {
+  description = "IAM role ARN for Grafana CloudWatch datasource — set as grafana.serviceAccount.annotations.eks.amazonaws.com/role-arn in values-prod.yaml"
+  value       = aws_iam_role.grafana_cloudwatch.arn
+}
+
 output "github_actions_role_arn" {
   description = "IAM role ARN for GitHub Actions CI/CD — set as AWS_ROLE_TO_ASSUME in GitHub repository variables"
   value       = aws_iam_role.github_actions.arn
