@@ -58,8 +58,8 @@ spec:
     {{- if .Values.grafana.enabled }}
     - match: "Host(`{{ .Values.domains.grafana }}`)"
       kind: Rule
-      middlewares:
-        - name: traefik-monitoring-auth  # same BasicAuth secret as Prometheus
+      # middlewares:
+      #   - name: traefik-monitoring-auth  # same BasicAuth secret as Prometheus
       services:
         - name: {{ .Values.grafana.serviceName }}
           namespace: {{ .Values.grafana.namespace }}
