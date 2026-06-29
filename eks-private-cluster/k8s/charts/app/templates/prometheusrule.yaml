@@ -23,14 +23,14 @@ spec:
         # ── Traffic ───────────────────────────────────────────────────────────
         # Not an alert, but a recording rule used in dashboards and other alerts.
         - record: job:http_requests_total:rate5m
-          expr: sum(rate(http_requests_total{job="{{ .Release.Name }}-svc"}[5m]))
+          expr: sum(rate(http_requests_total{job="{{ .Release.Name }}-service"}[5m]))
 
         # ── Errors ────────────────────────────────────────────────────────────
         - alert: HighErrorRate
           expr: |
-            sum(rate(http_requests_total{job="{{ .Release.Name }}-svc", status=~"5.."}[5m]))
+            sum(rate(http_requests_total{job="{{ .Release.Name }}-service", status=~"5.."}[5m]))
             /
-            sum(rate(http_requests_total{job="{{ .Release.Name }}-svc"}[5m])) > 0.05
+            sum(rate(http_requests_total{job="{{ .Release.Name }}-service"}[5m])) > 0.05
           for: 5m
           labels:
             severity: critical
@@ -44,7 +44,7 @@ spec:
           expr: |
             histogram_quantile(0.95,
               sum by (le) (
-                rate(http_request_duration_seconds_bucket{job="{{ .Release.Name }}-svc"}[5m])
+                rate(http_request_duration_seconds_bucket{job="{{ .Release.Name }}-service"}[5m])
               )
             ) > 0.3
           for: 10m
@@ -73,7 +73,7 @@ spec:
         # ── Target availability ───────────────────────────────────────────────
         - alert: AppMetricsTargetDown
           expr: |
-            up{job="{{ .Release.Name }}-svc"} == 0
+            up{job="{{ .Release.Name }}-service"} == 0
           for: 5m
           labels:
             severity: critical
