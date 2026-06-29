@@ -43,6 +43,11 @@ output "eso_role_arn" {
   value       = module.iam.eso_role_arn
 }
 
+output "grafana_cloudwatch_role_arn" {
+  description = "IAM role ARN for Grafana CloudWatch datasource — paste into prometheus values-prod.yaml as grafana.serviceAccount.annotations.eks.amazonaws.com/role-arn"
+  value       = module.iam.grafana_cloudwatch_role_arn
+}
+
 output "github_actions_role_arn" {
   description = "IAM role ARN for GitHub Actions — set as AWS_ROLE_TO_ASSUME in GitHub repository variables"
   value       = module.iam.github_actions_role_arn

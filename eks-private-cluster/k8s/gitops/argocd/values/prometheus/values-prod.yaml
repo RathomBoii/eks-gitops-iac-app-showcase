@@ -3,12 +3,12 @@
 # This file is an override file — only keys that differ from chart defaults are
 # declared here. Helm deep-merges this with the chart's full default values.yaml.
 #
-# Goal: install ONLY Prometheus + the Prometheus Operator (required to manage
-# the Prometheus CRD). Everything else bundled in kube-prometheus-stack is
-# disabled here because each component is either deployed separately or not
-# needed at this stage:
+# Goal: install Prometheus + the Prometheus Operator AND Grafana from this same
+# kube-prometheus-stack release. Grafana is no longer a separate ArgoCD app —
+# it is bundled here so the operator wires the Prometheus datasource for us and
+# both components share one release lifecycle.
 #
-#   Grafana      → separate ArgoCD app  (argocd/applications/grafana/)
+#   Grafana      → enabled here (deployed by this same kube-prometheus-stack release)
 #   Loki         → separate ArgoCD app  (argocd/applications/loki/)
 #   Tempo        → separate ArgoCD app  (argocd/applications/tempo/)
 #   Alertmanager → should be enabled here if alerting is needed
@@ -16,9 +16,173 @@
 #   kube-state-metrics   → enabled here (export k8s object eg. pods, deployments, nodes metrics to Prometheus)
 #   EKS control plane    → enabled=false here (EKS control plane is isolated from data plane, no metrics endpoint reachable)
 
-# ── Components disabled — not part of this install ───────────────────────────
+# ── Grafana — bundled in this kube-prometheus-stack release ──────────────────
+# All keys below are passed through to the grafana/grafana subchart. They were
+# previously in values/grafana/values-prod.yaml; now nested under `grafana:`.
 grafana:
-  enabled: false  # deployed separately via grafana/grafana chart
+  enabled: true
+
+  # ── ServiceAccount (IRSA for the CloudWatch datasource) ────────────────────
+  # Annotate the Grafana SA with the IRSA role so the CloudWatch datasource
+  # (authType: default) can assume it via the AWS SDK default credential chain.
+  # Role created by terraform module "iam" (aws_iam_role.grafana_cloudwatch).
+  # Get the ARN with:
+  #   terraform -chdir=eks-private-cluster/terraform output grafana_cloudwatch_role_arn
+  # The SA name below must match var.grafana_service_account_name in that module
+  # (default "prometheus-grafana" = <release>-grafana).
+  serviceAccount:
+    create: true
+    name: prometheus-grafana
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::687069305167:role/prod-grafana-cloudwatch-irsa"
+
+  # ── Admin credentials ──────────────────────────────────────────────────────
+  # Reference a pre-existing Kubernetes Secret synced from AWS Secrets Manager
+  # via ExternalSecret. The chart injects these as GF_SECURITY_ADMIN_* env vars.
+  admin:
+    existingSecret: grafana-credentials  # K8s Secret created by ExternalSecret
+    userKey: admin_user
+    passwordKey: admin_password
+
+  # ── Resource limits ────────────────────────────────────────────────────────
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  # ── Persistent storage ─────────────────────────────────────────────────────
+  # Disabled: SQLite on disk replaced by external PostgreSQL (RDS).
+  # All state (dashboards, users, alerting) is stored in the RDS instance.
+  persistence:
+    enabled: false
+
+  # ── Ingress ────────────────────────────────────────────────────────────────
+  ingress:
+    enabled: false  # ingress managed by Traefik IngressRoute
+
+  # ── External PostgreSQL database (RDS) ─────────────────────────────────────
+  # Grafana expands ${ENV_VAR} references inside grafana.ini at startup.
+  # GF_DATABASE_PASSWORD and friends are injected from a Kubernetes Secret
+  # (see `envValueFrom` below). From boot, every dashboard/user/alert is
+  # written to RDS instead of local SQLite.
+  grafana.ini:
+    database:
+      type: postgres
+      host: "${POSTGRES_HOST}:5432"
+      name: "${GF_DATABASE_NAME}"
+      user: "${GF_DATABASE_USER}"
+      password: "${GF_DATABASE_PASSWORD}"
+      ssl_mode: require
+
+  # ── Database credentials injected as env vars ──────────────────────────────
+  # Grafana resolves ${GF_DATABASE_*} and ${POSTGRES_HOST} in grafana.ini at
+  # startup. envValueFrom (not env) is required for secretKeyRef.
+  envValueFrom:
+    GF_DATABASE_PASSWORD:
+      secretKeyRef:
+        name: grafana-credentials
+        key: db_password
+    GF_DATABASE_NAME:
+      secretKeyRef:
+        name: grafana-credentials
+        key: db_name
+    GF_DATABASE_USER:
+      secretKeyRef:
+        name: grafana-credentials
+        key: db_user
+    POSTGRES_HOST:
+      secretKeyRef:
+        name: grafana-credentials
+        key: db_host
+
+  # ── Datasources auto-provisioned on first boot ─────────────────────────────
+  # We define the Prometheus datasource explicitly (pointing at the stable
+  # operator-managed Service), so disable the stack's auto-injected default to
+  # avoid a duplicate Prometheus datasource.
+  sidecar:
+    datasources:
+      defaultDatasourceEnabled: false
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        # ── Prometheus (default metrics datasource) ────────────────────────
+        # prometheus-operated is the operator-managed Service — name never
+        # changes regardless of the Helm release name.
+        - name: Prometheus
+          type: prometheus
+          uid: prometheus
+          access: proxy
+          url: http://prometheus-operated.monitoring.svc:9090
+          isDefault: true
+
+        # ── Tempo (distributed tracing) ────────────────────────────────────
+        - name: Tempo
+          type: tempo
+          uid: tempo
+          access: proxy
+          url: http://tempo.monitoring.svc:3100
+          jsonData:
+            # Trace → Logs: span in Tempo → Loki logs for that trace_id
+            tracesToLogsV2:
+              datasourceUid: loki
+              spanStartTimeShift: "-1h"
+              spanEndTimeShift: "1h"
+              filterByTraceID: true
+              filterBySpanID: false
+              customQuery: true
+              query: '{job=~".+"} | json | trace_id=~"${__trace.traceId}"'
+            # Trace → Metrics: link spans to Prometheus metric explorer
+            tracesToMetrics:
+              datasourceUid: prometheus
+            # Service graph: request topology from span data
+            serviceMap:
+              datasourceUid: prometheus
+            nodeGraph:
+              enabled: true
+            lokiSearch:
+              datasourceUid: loki
+
+        # ── Loki (log aggregation) ─────────────────────────────────────────
+        - name: Loki
+          type: loki
+          uid: loki
+          access: proxy
+          url: http://loki.monitoring.svc:3100
+          jsonData:
+            # Logs → Traces: log line with trace_id shows a link to Tempo
+            derivedFields:
+              - datasourceUid: tempo
+                matcherRegex: '"trace_id":"([a-f0-9]{32})"'
+                name: TraceID
+                url: "${__value.raw}"   # Grafana substitutes the captured trace_id
+
+        # ── CloudWatch (AWS/EKS control-plane metrics — etcd & co.) ─────────
+        # Covers the control-plane signals that have NO scrapable endpoint on
+        # managed EKS (notably kube-etcd). AWS ingests core control-plane metrics
+        # into CloudWatch under the AWS/EKS namespace, so query them from Grafana
+        # here rather than from Prometheus.
+        #   Ref: https://docs.aws.amazon.com/eks/latest/userguide/view-raw-metrics.html
+        #        (section "Deploy a Prometheus scraper…" → CloudWatch AWS/EKS note)
+        #
+        # Auth — authType: default uses the AWS SDK default credential chain,
+        # which on EKS resolves to IRSA. The Grafana ServiceAccount therefore
+        # needs an IRSA role annotation with a policy allowing at least:
+        #   cloudwatch:GetMetricData, cloudwatch:ListMetrics,
+        #   cloudwatch:GetMetricStatistics, cloudwatch:DescribeAlarmsForMetric,
+        #   tag:GetResources
+        # Set the role on the Grafana SA via grafana.serviceAccount.annotations:
+        #   eks.amazonaws.com/role-arn: <grafana-cloudwatch-irsa-role-arn>
+        - name: CloudWatch
+          type: cloudwatch
+          uid: cloudwatch
+          access: proxy
+          jsonData:
+            authType: default            # default chain → IRSA on EKS
+            defaultRegion: ap-southeast-7
 
 alertmanager:
   enabled: true  # enable Prometheus AlertManager, evaluate if needed for alerting
@@ -48,6 +212,8 @@ kubeEtcd:
   enabled: false
 kubeProxy:
   enabled: false
+kubeApiServer:
+  enabled: true # Prometheus can scrape the API server metrics endpoint, which is reachable from pods in the data plane
 
 # ── Prometheus Operator — keep enabled (required) ────────────────────────────
 # The operator watches for Prometheus CRs and creates the StatefulSet.
@@ -60,6 +226,21 @@ prometheusOperator:
 # So, instead of make Grafana point datasource to prometheus service, we better point to Thanos sidecar service
 # Which is the same as prometheus service, but it will also have Thanos sidecar container to store metrics in S3 bucket.
 prometheus:
+  # ── EKS control-plane metrics RBAC (GitOps-safe) ───────────────────────────
+  # EKS exposes kube-scheduler and kube-controller-manager metrics through the
+  # metrics.eks.amazonaws.com API group (see additionalScrapeConfigs below).
+  # The Prometheus ServiceAccount needs `get` on that group or scrapes return 403.
+  # Declaring the rule here (instead of `kubectl patch`) means ArgoCD selfHeal
+  # won't revert it — the rule is appended to the Prometheus ClusterRole.
+  additionalRulesForClusterRole:
+    - apiGroups:
+        - metrics.eks.amazonaws.com
+      resources:
+        - kcm/metrics   # kube-controller-manager
+        - ksh/metrics   # kube-scheduler
+      verbs:
+        - get
+
   prometheusSpec:
     retention: 30d  # longer retention in prod for incident investigation
     resources:
@@ -81,7 +262,69 @@ prometheus:
             # On EKS use IRSA — no access keys needed:
             # credentials come from the pod's IAM role (no access_key / secret_key needed)
 
+    # ── EKS control-plane scrape configs ──────────────────────────────────────
+    # On managed EKS the kube-scheduler / kube-controller-manager run on AWS-owned
+    # nodes, so the chart's kubeScheduler/kubeControllerManager ServiceMonitors
+    # (which target node IP:10257/10259) never connect. Instead, EKS 1.28+ exposes
+    # these metrics through the API server proxy under the metrics.eks.amazonaws.com
+    # API group. We scrape those endpoint paths directly here.
+    #
+    # Auth: each scrape uses the Prometheus pod's own ServiceAccount token + the
+    # in-cluster CA. RBAC for the metrics.eks.amazonaws.com group is granted via
+    # prometheus.additionalRulesForClusterRole above.
+    #
+    # NOTE: etcd and kube-proxy are intentionally NOT here — etcd has no reachable
+    # endpoint on EKS (use CloudWatch AWS/EKS), and kube-proxy binds metrics to
+    # 127.0.0.1:10249 unless its metricsBindAddress is patched to 0.0.0.0.
+    #
+    # Source / citation — these job definitions (metrics paths, TLS/bearer-token
+    # auth, the default;kubernetes;https relabel keep, and the matching
+    # metrics.eks.amazonaws.com RBAC rule above) are adapted from the official
+    # AWS EKS documentation:
+    #   "Fetch control plane raw metrics in Prometheus format" →
+    #   section "Deploy a Prometheus scraper to consistently scrape metrics"
+    #   https://docs.aws.amazon.com/eks/latest/userguide/view-raw-metrics.html
+    # Endpoint paths (ksh = kube-scheduler, kcm = kube-controller-manager) and the
+    # 1.28+ availability note are documented in the same page under
+    #   "Fetch control plane metrics with metrics.eks.amazonaws.com".
+    additionalScrapeConfigs:
+      # ── kube-scheduler ──────────────────────────────────────────────────────
+      - job_name: eks-kube-scheduler
+        kubernetes_sd_configs:
+          - role: endpoints
+        scheme: https
+        metrics_path: /apis/metrics.eks.amazonaws.com/v1/ksh/container/metrics
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          insecure_skip_verify: true
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          # Keep only the default/kubernetes/https endpoint (the API server),
+          # which is where the metrics.eks.amazonaws.com proxy path is served.
+          - source_labels:
+              - __meta_kubernetes_namespace
+              - __meta_kubernetes_service_name
+              - __meta_kubernetes_endpoint_port_name
+            action: keep
+            regex: default;kubernetes;https
 
+      # ── kube-controller-manager ───────────────────────────────────────────────
+      - job_name: eks-kube-controller-manager
+        kubernetes_sd_configs:
+          - role: endpoints
+        scheme: https
+        metrics_path: /apis/metrics.eks.amazonaws.com/v1/kcm/container/metrics
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          insecure_skip_verify: true
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - source_labels:
+              - __meta_kubernetes_namespace
+              - __meta_kubernetes_service_name
+              - __meta_kubernetes_endpoint_port_name
+            action: keep
+            regex: default;kubernetes;https
 
     # ── Persistent storage ──────────────────────────────────────────────────
     # storageSpec adds a volumeClaimTemplate to the Prometheus StatefulSet.
