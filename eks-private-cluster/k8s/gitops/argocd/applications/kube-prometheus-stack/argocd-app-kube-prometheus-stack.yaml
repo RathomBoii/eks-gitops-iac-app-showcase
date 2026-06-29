@@ -52,7 +52,7 @@ spec:
       targetRevision: "87.2.0"  # pin chart version — upgrade by changing this value
       helm:
         valueFiles:
-          - $values/eks-private-cluster/k8s/gitops/argocd/values/prometheus/values-prod.yaml
+          - $values/eks-private-cluster/k8s/gitops/argocd/values/kube-prometheus-stack/values-prod.yaml
           # $values is the alias created by Source 2 below — it resolves to the
           # root of this Git repo, so the path above points to our values file.
 
