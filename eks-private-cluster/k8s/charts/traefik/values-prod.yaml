@@ -59,13 +59,13 @@ userApp:
   enabled: false
 
 grafana:
-  serviceName: grafana
+  serviceName: kube-prometheus-stack-grafana  # Service from kube-prometheus-stack (release name = ArgoCD app "kube-prometheus-stack")
   namespace: monitoring
   port: 80
   enabled: true
 
 prometheus:
-  serviceName: prometheus-kube-prometheus-prometheus
+  serviceName: kube-prometheus-stack-prometheus  # <release>-prometheus (Helm fullname dedupes the chart name; not the triple-repeated form)
   namespace: monitoring
   port: 9090
   enabled: true

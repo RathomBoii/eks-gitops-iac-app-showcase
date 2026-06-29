@@ -12,16 +12,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  # ── Why resources are named "prometheus-kube-prometheus-prometheus" ───────────
-  # The kube-prometheus-stack chart names its resources using the pattern:
-  #   <release-name>-kube-prometheus-<component>
-  # ArgoCD uses the Application name below as the Helm release name, so:
-  #   "prometheus" + "kube-prometheus" + "prometheus" → prometheus-kube-prometheus-prometheus
-  # This triple repetition is expected — it is not a misconfiguration.
-  # To connect to Prometheus from other services (e.g. Grafana), use the stable
-  # Service created by the Operator: prometheus-operated.monitoring.svc:9090
+  # ── How resources are named ──────────────────────────────────────────────────
+  # ArgoCD uses the Application name below as the Helm release name.
+  # The chart's fullname helper DEDUPES the chart name when the release name
+  # already contains it ("kube-prometheus-stack" ⊂ "kube-prometheus-stack"), so
+  # resources are named "<release>-<component>" 
+  #   • Prometheus Service → kube-prometheus-stack-prometheus  (port 9090)
+  #   • Grafana Service    → kube-prometheus-stack-grafana     (port 80)
+  # To reach Prometheus from other services, you can also use the stable
+  # Operator-created headless Service: prometheus-operated.monitoring.svc:9090
   # ─────────────────────────────────────────────────────────────────────────────
-  name: prometheus
+  name: kube-prometheus-stack
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io/foreground  # cascade-delete all Prometheus resources when this Application is deleted
