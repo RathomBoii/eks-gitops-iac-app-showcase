@@ -13,17 +13,17 @@ updates:
   # Enable version updates for Docker
   - package-ecosystem: "docker"
     # Look for a `Dockerfile` in the `root` directory
-    directory: "/eks-private-cluster/app"
+    directory: "/app/oil_prices"
     # Check for updates once a week
     schedule:
       interval: "daily"
     target-branch: "main"
 
   - package-ecosystem: "pip"
-    directory: "/eks-private-cluster/app"
+    directory: "/app/oil_prices"
     schedule:
       interval: "daily"
-    target-branch: "main"
+    target-branch: "main" 
 
 # For a Python project using pip, in /eks-private-cluster/app
   - package-ecosystem: "pip"
