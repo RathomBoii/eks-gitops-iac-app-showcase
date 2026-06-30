@@ -107,6 +107,56 @@ resource "aws_iam_role_policy" "grafana_cloudwatch" {
   })
 }
 
+# ── Thanos sidecar S3 IRSA role ─────────────────────────────────────────────
+# Allows the Prometheus StatefulSet pod (which runs the Thanos sidecar) to
+# upload TSDB blocks to the Thanos long-term S3 bucket.
+# The SA name is the chart's fullname: <release>-prometheus (Helm dedupes).
+resource "aws_iam_role" "thanos_s3" {
+  name = "${var.env}-thanos-s3-irsa"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = var.oidc_provider_arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${var.oidc_provider}:sub" = "system:serviceaccount:${var.prometheus_namespace}:${var.prometheus_service_account_name}"
+          "${var.oidc_provider}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+
+  tags = {
+    Name = "${var.env}-thanos-s3-irsa"
+    Env  = var.env
+  }
+}
+
+resource "aws_iam_role_policy" "thanos_s3" {
+  name = "${var.env}-thanos-s3"
+  role = aws_iam_role.thanos_s3.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ]
+      Resource = [
+        "arn:aws:s3:::${var.thanos_s3_bucket}",
+        "arn:aws:s3:::${var.thanos_s3_bucket}/*"
+      ]
+    }]
+  })
+}
+
 # ── AWS Load Balancer Controller IRSA role ────────────────────────────────────
 # Allows the aws-load-balancer-controller ServiceAccount in kube-system to
 # create/manage NLBs and ALBs in response to LoadBalancer services and Ingresses.

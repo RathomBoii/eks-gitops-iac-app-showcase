@@ -256,6 +256,18 @@ prometheus:
 
   prometheusSpec:
     retention: 30d  # longer retention in prod for incident investigation
+
+    # ── IRSA annotation for Thanos sidecar S3 uploads ──────────────────────
+    # The Thanos sidecar runs in the same pod as Prometheus. It uses the AWS SDK
+    # default credential chain which on EKS resolves to IRSA via the pod
+    # annotation below. Without this the sidecar gets Access Denied on S3.
+    # Role created by terraform module "iam" (aws_iam_role.thanos_s3).
+    # Get the ARN with:
+    #   terraform -chdir=eks-private-cluster/terraform output thanos_s3_role_arn
+    podMetadata:
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::687069305167:role/prod-thanos-s3-irsa"
+
     resources:
       requests:
         cpu: 500m

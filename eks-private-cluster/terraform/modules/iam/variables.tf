@@ -42,6 +42,24 @@ variable "grafana_service_account_name" {
   default     = "prometheus-grafana"
 }
 
+variable "prometheus_namespace" {
+  description = "Kubernetes namespace where Prometheus (kube-prometheus-stack) is deployed"
+  type        = string
+  default     = "monitoring"
+}
+
+variable "prometheus_service_account_name" {
+  description = "Prometheus ServiceAccount name — must match the SA created by the chart (default <release>-prometheus)"
+  type        = string
+  default     = "kube-prometheus-stack-prometheus"
+}
+
+variable "thanos_s3_bucket" {
+  description = "S3 bucket name for Thanos long-term metric storage"
+  type        = string
+  default     = "jessada-prometheus-thanos-metric-storage"
+}
+
 variable "github_org" {
   description = "GitHub organisation or user name that owns the repo (e.g. RathomBoii)"
   type        = string

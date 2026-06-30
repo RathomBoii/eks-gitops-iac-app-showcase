@@ -48,6 +48,11 @@ output "grafana_cloudwatch_role_arn" {
   value       = module.iam.grafana_cloudwatch_role_arn
 }
 
+output "thanos_s3_role_arn" {
+  description = "IAM role ARN for Thanos sidecar S3 — set as prometheus.prometheusSpec.podMetadata annotations in values-prod.yaml"
+  value       = module.iam.thanos_s3_role_arn
+}
+
 output "github_actions_role_arn" {
   description = "IAM role ARN for GitHub Actions — set as AWS_ROLE_TO_ASSUME in GitHub repository variables"
   value       = module.iam.github_actions_role_arn
