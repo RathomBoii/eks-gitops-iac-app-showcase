@@ -80,6 +80,15 @@ grafana:
   # ── Database credentials injected as env vars ──────────────────────────────
   # Grafana resolves ${GF_DATABASE_*} and ${POSTGRES_HOST} in grafana.ini at
   # startup. envValueFrom (not env) is required for secretKeyRef.
+  # ── Static env vars ────────────────────────────────────────────────────────
+  # GF_DATABASE_TYPE is set as a plain env var so that BOTH the web server AND
+  # `grafana cli` pick it up. Without it, `grafana cli admin reset-admin-password`
+  # falls back to local SQLite (Grafana 13 CLI ignores the mounted grafana.ini
+  # even when GF_PATHS_CONFIG is set).
+  env:
+    GF_DATABASE_TYPE: postgres
+    GF_DATABASE_SSL_MODE: require   # RDS requires TLS; grafana.ini has this too but CLI ignores the ini file
+
   envValueFrom:
     GF_DATABASE_PASSWORD:
       secretKeyRef:
@@ -93,6 +102,10 @@ grafana:
       secretKeyRef:
         name: grafana-credentials
         key: db_user
+    GF_DATABASE_HOST:
+      secretKeyRef:
+        name: grafana-credentials
+        key: db_host
     POSTGRES_HOST:
       secretKeyRef:
         name: grafana-credentials
