@@ -239,6 +239,20 @@ prometheusOperator:
 # So, instead of make Grafana point datasource to prometheus service, we better point to Thanos sidecar service
 # Which is the same as prometheus service, but it will also have Thanos sidecar container to store metrics in S3 bucket.
 prometheus:
+  # ── IRSA for Thanos sidecar S3 uploads ─────────────────────────────────────
+  # The EKS pod-identity webhook injects AWS_ROLE_ARN + the projected token
+  # volume based on the *ServiceAccount* annotation (NOT a pod annotation).
+  # Annotating the SA here makes the webhook wire IRSA into every container in
+  # the Prometheus pod, including the Thanos sidecar — otherwise the sidecar
+  # falls back to the node role and gets S3 Access Denied.
+  # Role created by terraform module "iam" (aws_iam_role.thanos_s3).
+  # Get the ARN with:
+  #   terraform -chdir=eks-private-cluster/terraform output thanos_s3_role_arn
+  serviceAccount:
+    create: true
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::687069305167:role/prod-thanos-s3-irsa"
+
   # ── EKS control-plane metrics RBAC (GitOps-safe) ───────────────────────────
   # EKS exposes kube-scheduler and kube-controller-manager metrics through the
   # metrics.eks.amazonaws.com API group (see additionalScrapeConfigs below).
@@ -256,17 +270,6 @@ prometheus:
 
   prometheusSpec:
     retention: 30d  # longer retention in prod for incident investigation
-
-    # ── IRSA annotation for Thanos sidecar S3 uploads ──────────────────────
-    # The Thanos sidecar runs in the same pod as Prometheus. It uses the AWS SDK
-    # default credential chain which on EKS resolves to IRSA via the pod
-    # annotation below. Without this the sidecar gets Access Denied on S3.
-    # Role created by terraform module "iam" (aws_iam_role.thanos_s3).
-    # Get the ARN with:
-    #   terraform -chdir=eks-private-cluster/terraform output thanos_s3_role_arn
-    podMetadata:
-      annotations:
-        eks.amazonaws.com/role-arn: "arn:aws:iam::687069305167:role/prod-thanos-s3-irsa"
 
     resources:
       requests:
